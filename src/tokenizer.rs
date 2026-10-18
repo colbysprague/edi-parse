@@ -16,6 +16,7 @@
 //! | 105    | segment terminator              | `~`   |
 
 use crate::error::EdiError;
+use std::collections::{HashMap, HashSet};
 
 /// Length of a complete ISA segment, including its segment terminator.
 pub const ISA_LEN: usize = 106;
@@ -62,8 +63,71 @@ impl Delimiters {
     ///   segment delimiters must not be ASCII alphanumeric (older files put `U`
     ///   in ISA11) → otherwise [`EdiError::InvalidDelimiters`].
     pub fn detect(input: &str) -> Result<Delimiters, EdiError> {
-        todo!("Task 2: detect delimiters from the ISA header")
+        println!("\x1b[33mInput is: {input}\x1b[0m");
+
+        let trimmed_header: &str = input.trim_start_matches(['\n', '\r', ' ']);
+
+        if let Some(value) = validate_header(trimmed_header) {
+            println!("\x1b[33mFOUND INVALID HEADER\x1b[0m");
+            return value;
+        }
+
+        let delim_pos = [
+            ELEMENT_SEP_POS,
+            REPETITION_SEP_POS,
+            COMPONENT_SEP_POS,
+            SEGMENT_TERM_POS,
+        ];
+
+        let delims @ [element, repetition, component, segment] =
+            delim_pos.map(|pos| trimmed_header.as_bytes()[pos] as char);
+
+        let unique = HashSet::from(delims);
+        if unique.len() != delim_pos.len() {
+            return Err(EdiError::InvalidDelimiters(format!(
+                "delimeters must be 4 distinct values, but found {:?}",
+                delims
+            )));
+        }
+
+        if [element, component, segment]
+            .iter()
+            .any(|c| c.is_ascii_alphanumeric())
+        {
+            return Err(EdiError::InvalidDelimiters(format!(
+                "element, component, segment must be non-ascii-alphanumeric but found {:?}",
+                delims
+            )));
+        }
+
+        println!(
+            "\x1b[33melement: {element} repetition: {repetition} component: {component} segment: {segment}\x1b[0m"
+        );
+
+        return Ok(Delimiters {
+            element,
+            repetition,
+            component,
+            segment,
+        });
     }
+}
+
+fn validate_header(trimmed_header: &str) -> Option<Result<Delimiters, EdiError>> {
+    if !trimmed_header.starts_with("ISA") {
+        return Some(Err(EdiError::MissingIsa));
+    }
+
+    // Validate ISA header is long enough to parse delims
+    let isa_len = trimmed_header.len();
+    if isa_len < ISA_LEN {
+        return Some(Err(EdiError::TruncatedIsa {
+            expected: (ISA_LEN),
+            found: (isa_len),
+        }));
+    }
+
+    None
 }
 
 /// One segment, split into its ID and elements. Every `&'a str` points into
@@ -164,5 +228,6 @@ fn is_valid_segment_id(id: &str) -> bool {
 /// Detect delimiters from the ISA header, then tokenize. Leading whitespace
 /// before `ISA` is skipped, as in [`Delimiters::detect`].
 pub fn tokenize<'a>(input: &'a str) -> Result<Vec<RawSegment<'a>>, EdiError> {
-    todo!("Task 2: detect + tokenize_with")
+    let delims = &Delimiters::detect(input)?;
+    return tokenize_with(input, delims);
 }
