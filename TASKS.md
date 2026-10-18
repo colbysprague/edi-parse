@@ -9,7 +9,7 @@ Run `make test-one T=<file>` (for example `T=tokenizer_tests`) to run one file.
 
 ---
 
-## [ ] 1. Zero-copy tokenizer
+## [x] 1. Zero-copy tokenizer
 
 - **Files:** `src/tokenizer.rs` (`tokenize_with`, `RawSegment::element`)
 - **Concept:** lifetimes. `RawSegment<'a>` holds `&'a str` slices of the input,

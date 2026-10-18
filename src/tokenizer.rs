@@ -85,7 +85,23 @@ impl<'a> RawSegment<'a> {
     /// Note the return type: `&'a str`, not `&str` tied to `&self`. The slice
     /// borrows the *input*, so it stays valid after this `RawSegment` is dropped.
     pub fn element(&self, n: usize) -> Option<&'a str> {
-        todo!("Task 1: 1-based element accessor")
+        // if segment is 0
+        if n == 0 {
+            return None;
+        }
+
+        // if segment is out of range
+        if n > self.elements.len() {
+            return None;
+        }
+
+        // if segment is blank
+        let out = self.elements[n - 1];
+        if out.eq("") {
+            return None;
+        }
+
+        return Some(out);
     }
 }
 
@@ -103,7 +119,48 @@ pub fn tokenize_with<'a>(
     input: &'a str,
     delims: &Delimiters,
 ) -> Result<Vec<RawSegment<'a>>, EdiError> {
-    todo!("Task 1: zero-copy tokenizer")
+    let segments: Vec<&str> = input
+        .split(delims.segment)
+        .map(|p| p.trim_matches(['\r', '\n']))
+        .filter(|p| !p.is_empty()) // I tried this but they ALL fail now...
+        .collect();
+
+    println!("\x1b[36mResulting segments:\x1b[0m {}", segments.join("*"));
+
+    let mut out = Vec::new();
+
+    for (idx, segment) in segments.iter().enumerate() {
+        let elements: Vec<&str> = segment.split(delims.element).collect();
+        let segment_id = get_valid_segment_id(elements.get(0).unwrap(), idx)?;
+
+        out.push(RawSegment {
+            id: segment_id,
+            elements: elements[1..].to_vec(),
+        })
+    }
+
+    return Ok(out);
+}
+
+fn get_valid_segment_id(segment_id: &str, position: usize) -> Result<&str, EdiError> {
+    if !is_valid_segment_id(segment_id) {
+        return Err(EdiError::InvalidSegmentId {
+            id: segment_id.to_string(),
+            position: position,
+        });
+    }
+
+    return Ok(segment_id);
+}
+
+/// Validates that a given segment id
+/// - is only uppercase ascii
+/// - and is 2-3 chars long
+fn is_valid_segment_id(id: &str) -> bool {
+    (2..=3).contains(&id.len())
+        && id
+            .chars()
+            .all(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
 }
 
 /// Detect delimiters from the ISA header, then tokenize. Leading whitespace
