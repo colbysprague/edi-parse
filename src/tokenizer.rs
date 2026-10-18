@@ -125,8 +125,6 @@ pub fn tokenize_with<'a>(
         .filter(|p| !p.is_empty())
         .collect();
 
-    println!("\x1b[36mResulting segments:\x1b[0m {}", segments.join("*"));
-
     let mut out = Vec::new();
 
     for (idx, segment) in segments.iter().enumerate() {
