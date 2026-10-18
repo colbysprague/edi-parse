@@ -122,7 +122,7 @@ pub fn tokenize_with<'a>(
     let segments: Vec<&str> = input
         .split(delims.segment)
         .map(|p| p.trim_matches(['\r', '\n']))
-        .filter(|p| !p.is_empty()) // I tried this but they ALL fail now...
+        .filter(|p| !p.is_empty())
         .collect();
 
     println!("\x1b[36mResulting segments:\x1b[0m {}", segments.join("*"));
