@@ -16,7 +16,7 @@
 //! | 105    | segment terminator              | `~`   |
 
 use crate::error::EdiError;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Length of a complete ISA segment, including its segment terminator.
 pub const ISA_LEN: usize = 106;
@@ -63,12 +63,9 @@ impl Delimiters {
     ///   segment delimiters must not be ASCII alphanumeric (older files put `U`
     ///   in ISA11) → otherwise [`EdiError::InvalidDelimiters`].
     pub fn detect(input: &str) -> Result<Delimiters, EdiError> {
-        println!("\x1b[33mInput is: {input}\x1b[0m");
-
         let trimmed_header: &str = input.trim_start_matches(['\n', '\r', ' ']);
 
         if let Some(value) = validate_header(trimmed_header) {
-            println!("\x1b[33mFOUND INVALID HEADER\x1b[0m");
             return value;
         }
 
@@ -99,10 +96,6 @@ impl Delimiters {
                 delims
             )));
         }
-
-        println!(
-            "\x1b[33melement: {element} repetition: {repetition} component: {component} segment: {segment}\x1b[0m"
-        );
 
         return Ok(Delimiters {
             element,
