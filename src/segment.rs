@@ -136,20 +136,32 @@ segment_def! {
     }
 }
 
-segment_def! {
-    /// `SV1`: professional service line (837P).
-    #[derive(Debug, Clone, PartialEq)]
-    struct Sv1<'a> {
-        /// First component of composite SV101 (`HC` in `HC:99213`). `None` when
-        /// SV101 has no component separator.
-        qualifier: Option<&'a str> = 1,
-        /// Procedure code: second component of SV101 (`99213`), or all of SV101
-        /// when it has no component separator.
-        procedure_code: &'a str = 1,
-        /// SV102: line charge.
-        charge: f64 = 2,
-        /// SV104: units. Optional, but if present it must be numeric.
-        units: Option<f64> = 4,
+/// `SV1`: professional service line (837P).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sv1<'a> {
+    /// First component of composite SV101 (`HC` in `HC:99213`). `None` when
+    /// SV101 has no component separator.
+    pub qualifier: Option<&'a str>,
+    /// Procedure code: second component of SV101 (`99213`), or all of SV101
+    /// when it has no component separator.
+    pub procedure_code: &'a str,
+    /// SV102: line charge.
+    pub charge: f64,
+    /// SV104: units. Optional, but if present it must be numeric.
+    pub units: Option<f64>,
+}
+
+impl<'a> Sv1<'a> {
+    pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
+        let (qualifier, procedure_code) =
+            split_composite(element::<&'a str>(raw, 1)?, delims.component);
+
+        Ok(Sv1 {
+            qualifier: qualifier,
+            procedure_code: procedure_code,
+            charge: element::<f64>(raw, 2)?,
+            units: element::<Option<f64>>(raw, 4)?,
+        })
     }
 }
 
@@ -170,18 +182,30 @@ segment_def! {
     }
 }
 
-segment_def! {
-    /// `SVC`: service payment information (835).
-    #[derive(Debug, Clone, PartialEq)]
-    struct Svc<'a> {
-        /// First component of composite SVC01, as in [`Sv1::qualifier`].
-        qualifier: Option<&'a str> = 1,
-        /// Procedure code from SVC01, as in [`Sv1::procedure_code`].
-        procedure_code: &'a str = 1,
-        /// SVC02: line charge.
-        charge: f64 = 2,
-        /// SVC03: line payment.
-        paid: f64 = 3,
+/// `SVC`: service payment information (835).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Svc<'a> {
+    /// First component of composite SVC01, as in [`Sv1::qualifier`].
+    pub qualifier: Option<&'a str>,
+    /// Procedure code from SVC01, as in [`Sv1::procedure_code`].
+    pub procedure_code: &'a str,
+    /// SVC02: line charge.
+    pub charge: f64,
+    /// SVC03: line payment.
+    pub paid: f64,
+}
+
+impl<'a> Svc<'a> {
+    pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
+        let (qualifier, procedure_code) =
+            split_composite(element::<&'a str>(raw, 1)?, delims.component);
+
+        Ok(Svc {
+            qualifier: qualifier,
+            procedure_code: procedure_code,
+            charge: element::<f64>(raw, 2)?,
+            paid: element::<f64>(raw, 3)?,
+        })
     }
 }
 
@@ -203,7 +227,7 @@ segment_def! {
         /// GE01: number of transaction sets in the group.
         transaction_count: usize = 1,
         /// GE02: must equal GS06.
-        control_number: &'a str = 6,
+        control_number: &'a str = 2,
     }
 }
 
@@ -274,12 +298,6 @@ pub fn element<'a, T: FromElement<'a>>(s: &RawSegment<'a>, index: usize) -> Resu
 }
 
 impl<'a> Segment<'a> {
-    // TODO(enhancement): make segment parsing declarative instead of one
-    // handwritten arm per segment. Options, cheapest first:
-    //   1. A `FromRaw` trait implemented on each struct (Isa, Clm, ...), so
-    //      `from_raw` becomes a short dispatcher.
-    //   2. A derive macro with field attributes (element index + coercion),
-    //      the way serde's `#[serde(...)]` works.
     /// Convert one raw segment into a typed segment.
     ///
     /// Takes `raw` by value: for `Unknown` you can move its `elements` Vec in
@@ -296,15 +314,15 @@ impl<'a> Segment<'a> {
             "BPR" => Ok(Segment::Bpr(Bpr::from_segment(&raw)?)),
             "NM1" => Ok(Segment::Nm1(Nm1::from_segment(&raw)?)),
             "CLM" => Ok(Segment::Clm(Clm::from_segment(&raw)?)),
-            "SV1" => Ok(Segment::Sv1(Sv1::from_segment(&raw)?)),
+            "SV1" => Ok(Segment::Sv1(Sv1::from_segment(&raw, &delims)?)),
             "CLP" => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
-            "SVC" => Ok(Segment::Svc(Svc::from_segment(&raw)?)),
+            "SVC" => Ok(Segment::Svc(Svc::from_segment(&raw, &delims)?)),
             "SE" => Ok(Segment::Se(Se::from_segment(&raw)?)),
             "GE" => Ok(Segment::Ge(Ge::from_segment(&raw)?)),
             "IEA" => Ok(Segment::Iea(Iea::from_segment(&raw)?)),
-            _ => Err(EdiError::MissingElement {
-                segment: ("SEG".to_string()),
-                index: (1),
+            _ => Ok(Segment::Unknown {
+                id: raw.id,
+                elements: raw.elements,
             }),
         };
     }
@@ -385,4 +403,11 @@ pub fn parse_segments<'a>(input: &'a str) -> Result<Vec<Segment<'a>>, EdiError> 
         .into_iter()
         .map(|segment| Segment::from_raw(segment, &delims))
         .collect()
+}
+
+fn split_composite(value: &str, sep: char) -> (Option<&str>, &str) {
+    match value.split_once(sep) {
+        Some((qualifier, code)) => (Some(qualifier), code),
+        None => (None, value),
+    }
 }
