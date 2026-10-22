@@ -268,19 +268,19 @@ pub trait FromElement<'a>: Sized {
 
 impl<'a> FromElement<'a> for f64 {
     fn from_element(s: &RawSegment<'a>, index: usize) -> Result<Self, EdiError> {
-        return parse_amount(s.id, index, required(s, index)?);
+        parse_amount(s.id, index, required(s, index)?)
     }
 }
 
 impl<'a> FromElement<'a> for usize {
     fn from_element(s: &RawSegment<'a>, index: usize) -> Result<Self, EdiError> {
-        return parse_count(s.id, index, required(s, index)?);
+        parse_count(s.id, index, required(s, index)?)
     }
 }
 
 impl<'a> FromElement<'a> for &'a str {
     fn from_element(s: &RawSegment<'a>, index: usize) -> Result<Self, EdiError> {
-        return required(s, index);
+        required(s, index)
     }
 }
 
@@ -307,7 +307,7 @@ impl<'a> Segment<'a> {
     /// Errors: [`EdiError::MissingElement`] for an absent/empty required
     /// element, [`EdiError::InvalidNumber`] for a non-numeric amount or count.
     pub fn from_raw(raw: RawSegment<'a>, delims: &Delimiters) -> Result<Segment<'a>, EdiError> {
-        return match raw.id {
+        match raw.id {
             "ISA" => Ok(Segment::Isa(Isa::from_segment(&raw)?)),
             "GS" => Ok(Segment::Gs(Gs::from_segment(&raw)?)),
             "ST" => Ok(Segment::St(St::from_segment(&raw)?)),
@@ -324,13 +324,13 @@ impl<'a> Segment<'a> {
                 id: raw.id,
                 elements: raw.elements,
             }),
-        };
+        }
     }
 
     /// The segment ID (`"CLM"`, `"SE"`, ...). Write this as one exhaustive
     /// `match` with no `_` arm, so adding a variant forces you to update it.
     pub fn id(&self) -> &'a str {
-        return match self {
+        match self {
             Segment::Isa(_) => "ISA",
             Segment::Gs(_) => "GS",
             Segment::St(_) => "ST",
@@ -344,20 +344,20 @@ impl<'a> Segment<'a> {
             Segment::Ge(_) => "GE",
             Segment::Iea(_) => "IEA",
             Segment::Unknown { id, .. } => *id,
-        };
+        }
     }
 }
 
 /// Return element `index` of `raw`, or [`EdiError::MissingElement`] if it is
 /// absent or empty.
 pub fn required<'a>(raw: &RawSegment<'a>, index: usize) -> Result<&'a str, EdiError> {
-    return match raw.element(index) {
+    match raw.element(index) {
         Some(e) => Ok(e),
         None => Err(EdiError::MissingElement {
             segment: (raw.id.to_string()),
             index,
         }),
-    };
+    }
 }
 
 /// Parse an X12 decimal amount (`"150.00"`, `"-5"`, `"0"`).
