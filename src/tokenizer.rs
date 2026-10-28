@@ -16,6 +16,7 @@
 //! | 105    | segment terminator              | `~`   |
 
 use crate::error::EdiError;
+use crate::segment_id;
 use std::collections::HashSet;
 
 /// Length of a complete ISA segment, including its segment terminator.
@@ -107,7 +108,7 @@ impl Delimiters {
 }
 
 fn validate_header(trimmed_header: &str) -> Option<Result<Delimiters, EdiError>> {
-    if !trimmed_header.starts_with("ISA") {
+    if !trimmed_header.starts_with(segment_id::ISA) {
         return Some(Err(EdiError::MissingIsa));
     }
 

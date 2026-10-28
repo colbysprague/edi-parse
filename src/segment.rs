@@ -4,6 +4,7 @@
 //! Element numbers in the docs below are X12 numbers (`CLM02` = `raw.element(2)`).
 
 use crate::error::EdiError;
+use crate::segment_id;
 use crate::tokenizer::{tokenize_with, Delimiters, RawSegment};
 use regex::Regex;
 use std::str::FromStr;
@@ -307,19 +308,21 @@ impl<'a> Segment<'a> {
     /// Errors: [`EdiError::MissingElement`] for an absent/empty required
     /// element, [`EdiError::InvalidNumber`] for a non-numeric amount or count.
     pub fn from_raw(raw: RawSegment<'a>, delims: &Delimiters) -> Result<Segment<'a>, EdiError> {
+        // Arms must be paths (`segment_id::ISA`), not bare names: a bare `ISA`
+        // that isn't a const in scope is a catch-all binding, not a comparison.
         match raw.id {
-            "ISA" => Ok(Segment::Isa(Isa::from_segment(&raw)?)),
-            "GS" => Ok(Segment::Gs(Gs::from_segment(&raw)?)),
-            "ST" => Ok(Segment::St(St::from_segment(&raw)?)),
-            "BPR" => Ok(Segment::Bpr(Bpr::from_segment(&raw)?)),
-            "NM1" => Ok(Segment::Nm1(Nm1::from_segment(&raw)?)),
-            "CLM" => Ok(Segment::Clm(Clm::from_segment(&raw)?)),
-            "SV1" => Ok(Segment::Sv1(Sv1::from_segment(&raw, &delims)?)),
-            "CLP" => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
-            "SVC" => Ok(Segment::Svc(Svc::from_segment(&raw, &delims)?)),
-            "SE" => Ok(Segment::Se(Se::from_segment(&raw)?)),
-            "GE" => Ok(Segment::Ge(Ge::from_segment(&raw)?)),
-            "IEA" => Ok(Segment::Iea(Iea::from_segment(&raw)?)),
+            segment_id::ISA => Ok(Segment::Isa(Isa::from_segment(&raw)?)),
+            segment_id::GS => Ok(Segment::Gs(Gs::from_segment(&raw)?)),
+            segment_id::ST => Ok(Segment::St(St::from_segment(&raw)?)),
+            segment_id::BPR => Ok(Segment::Bpr(Bpr::from_segment(&raw)?)),
+            segment_id::NM1 => Ok(Segment::Nm1(Nm1::from_segment(&raw)?)),
+            segment_id::CLM => Ok(Segment::Clm(Clm::from_segment(&raw)?)),
+            segment_id::SV1 => Ok(Segment::Sv1(Sv1::from_segment(&raw, &delims)?)),
+            segment_id::CLP => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
+            segment_id::SVC => Ok(Segment::Svc(Svc::from_segment(&raw, &delims)?)),
+            segment_id::SE => Ok(Segment::Se(Se::from_segment(&raw)?)),
+            segment_id::GE => Ok(Segment::Ge(Ge::from_segment(&raw)?)),
+            segment_id::IEA => Ok(Segment::Iea(Iea::from_segment(&raw)?)),
             _ => Ok(Segment::Unknown {
                 id: raw.id,
                 elements: raw.elements,
@@ -331,18 +334,18 @@ impl<'a> Segment<'a> {
     /// `match` with no `_` arm, so adding a variant forces you to update it.
     pub fn id(&self) -> &'a str {
         match self {
-            Segment::Isa(_) => "ISA",
-            Segment::Gs(_) => "GS",
-            Segment::St(_) => "ST",
-            Segment::Bpr(_) => "BPR",
-            Segment::Nm1(_) => "NM1",
-            Segment::Clm(_) => "CLM",
-            Segment::Sv1(_) => "SV1",
-            Segment::Clp(_) => "CLP",
-            Segment::Svc(_) => "SVC",
-            Segment::Se(_) => "SE",
-            Segment::Ge(_) => "GE",
-            Segment::Iea(_) => "IEA",
+            Segment::Isa(_) => segment_id::ISA,
+            Segment::Gs(_) => segment_id::GS,
+            Segment::St(_) => segment_id::ST,
+            Segment::Bpr(_) => segment_id::BPR,
+            Segment::Nm1(_) => segment_id::NM1,
+            Segment::Clm(_) => segment_id::CLM,
+            Segment::Sv1(_) => segment_id::SV1,
+            Segment::Clp(_) => segment_id::CLP,
+            Segment::Svc(_) => segment_id::SVC,
+            Segment::Se(_) => segment_id::SE,
+            Segment::Ge(_) => segment_id::GE,
+            Segment::Iea(_) => segment_id::IEA,
             Segment::Unknown { id, .. } => *id,
         }
     }

@@ -19,6 +19,7 @@
 pub mod error;
 pub mod parallel;
 pub mod segment;
+pub mod segment_id;
 pub mod stats;
 pub mod tokenizer;
 pub mod transaction;
