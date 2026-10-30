@@ -18,42 +18,48 @@ use crate::error::EdiError;
 use crate::parse_segments;
 use crate::segment::Segment;
 use crate::segment_id::{self};
+use serde::Serialize;
 /// A person or organization from an `NM1` segment.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Party<'a> {
     /// NM103.
     pub last_name: &'a str,
     /// NM104 (absent for organizations).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub first_name: Option<&'a str>,
     /// NM109 (NPI, member ID, ...).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<&'a str>,
 }
 
 /// One service line: an `SV1` (837P) or an `SVC` (835).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ServiceLine<'a> {
     pub procedure_code: &'a str,
     pub charge: f64,
     /// `None` for 837 lines (nothing has been paid yet), `Some` for 835 lines.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub paid: Option<f64>,
 }
 
 /// An 837P claim: a `CLM` plus its `SV1` lines.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Claim<'a> {
     /// CLM01.
     pub claim_id: &'a str,
     /// CLM02.
     pub total_charge: f64,
     /// The most recent `NM1*85` seen before this `CLM`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_provider: Option<Party<'a>>,
     /// The most recent `NM1*IL` seen before this `CLM`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subscriber: Option<Party<'a>>,
     pub service_lines: Vec<ServiceLine<'a>>,
 }
 
 /// An 835 claim payment: a `CLP` plus its `SVC` lines.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Remit<'a> {
     /// CLP01.
     pub claim_id: &'a str,
@@ -64,14 +70,16 @@ pub struct Remit<'a> {
     /// CLP04.
     pub paid: f64,
     /// CLP05.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub patient_responsibility: Option<f64>,
     /// The `NM1*QC` that follows this `CLP`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub patient: Option<Party<'a>>,
     pub service_lines: Vec<ServiceLine<'a>>,
 }
 
 /// The contents of an 837 transaction set.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ClaimSet<'a> {
     /// ST02.
     pub control_number: &'a str,
@@ -79,7 +87,7 @@ pub struct ClaimSet<'a> {
 }
 
 /// The contents of an 835 transaction set.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Remittance<'a> {
     /// ST02.
     pub control_number: &'a str,
@@ -89,14 +97,15 @@ pub struct Remittance<'a> {
 }
 
 /// One `ST`..`SE` transaction set.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Transaction<'a> {
     Claims(ClaimSet<'a>),
     Remittance(Remittance<'a>),
 }
 
 /// A whole parsed file: one `ISA`..`IEA` interchange.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Interchange<'a> {
     /// ISA06 (trimmed).
     pub sender_id: &'a str,
@@ -343,5 +352,9 @@ pub fn parse_str<'a>(input: &'a str) -> Result<Interchange<'a>, EdiError> {
 ///   its own fields (an internally tagged enum);
 /// - `Option` fields that are `None` are omitted, not `null`.
 pub fn to_json(interchange: &Interchange<'_>, pretty: bool) -> Result<String, serde_json::Error> {
-    todo!("Task 5: derive Serialize on the types above, then call serde_json")
+    if pretty {
+        serde_json::to_string_pretty(interchange)
+    } else {
+        serde_json::to_string(interchange)
+    }
 }
