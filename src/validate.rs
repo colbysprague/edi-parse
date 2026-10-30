@@ -108,7 +108,33 @@ fn is_neg_amount(amount: f64) -> bool {
 ///    - `paid` equals the sum of line payments → else `PaymentMismatch`.
 impl Validate for Remit<'_> {
     fn validate(&self) -> Result<(), Vec<ValidationError>> {
-        todo!("Task 6")
+        let mut validation_errors = Vec::new();
+        if !CLAIM_STATUS_CODES.contains(&self.status_code) {
+            validation_errors.push(ValidationError::UnknownStatus {
+                claim_id: (self.claim_id.to_string()),
+                code: (self.status_code.to_string()),
+            })
+        }
+
+        if is_neg_amount(self.total_charge) {
+            validation_errors.push(negative_amount_err()(
+                self.claim_id.to_string(),
+                "total_charge",
+                self.total_charge,
+            ));
+        }
+
+        if is_neg_amount(self.paid) {
+            validation_errors.push(negative_amount_err()(
+                self.claim_id.to_string(),
+                "paid",
+                self.paid,
+            ));
+        }
+
+        let serv_line_total: f64 = self.service_lines.iter().map(|line| self.paid).sum();
+
+        todo!()
     }
 }
 
