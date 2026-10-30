@@ -15,9 +15,9 @@
 //! attributes to the types below. They are deliberately left without them.
 
 use crate::error::EdiError;
+use crate::parse_segments;
 use crate::segment::Segment;
-use crate::segment_id;
-
+use crate::segment_id::{self};
 /// A person or organization from an `NM1` segment.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Party<'a> {
@@ -192,13 +192,147 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
 /// - An `SV1`/`SVC` with no open claim/remit → [`EdiError::UnexpectedSegment`].
 /// - All other segments (`HL`, `DTM`, `CAS`, other `NM1`s, ...) are ignored.
 pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'a>, EdiError> {
-    todo!("Task 5: group segments into transactions")
+    let mut header = None;
+    let mut transactions = Vec::new();
+    let mut billing_provider = None;
+    let mut subscriber = None;
+
+    for (i, seg) in segments.into_iter().enumerate() {
+        match seg {
+            Segment::Isa(isa) => header = Some(isa),
+            Segment::St(st) => match st.transaction_set_id {
+                "837" => transactions.push(Transaction::Claims(ClaimSet {
+                    control_number: (st.control_number),
+                    claims: (Vec::new()),
+                })),
+                "835" => transactions.push(Transaction::Remittance(Remittance {
+                    control_number: (st.control_number),
+                    total_payment: (0.0),
+                    remits: (Vec::new()),
+                })),
+                _ => {
+                    return Err(EdiError::UnsupportedTransaction(
+                        st.transaction_set_id.to_string(),
+                    ))
+                }
+            },
+            Segment::Nm1(nm1) => {
+                let party = Party {
+                    first_name: nm1.first_name,
+                    last_name: nm1.last_name,
+                    id: nm1.id,
+                };
+                match nm1.entity_id {
+                    "85" => billing_provider = Some(party),
+                    "IL" => subscriber = Some(party),
+                    "QC" => {
+                        let unexpected = unexpected();
+
+                        let Some(Transaction::Remittance(set)) = transactions.last_mut() else {
+                            return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                        };
+
+                        let Some(remit) = set.remits.last_mut() else {
+                            return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                        };
+
+                        remit.patient = Some(party);
+                    }
+                    _ => {}
+                }
+            }
+            Segment::Clm(clm) => {
+                if let Some(Transaction::Claims(set)) = transactions.last_mut() {
+                    set.claims.push(Claim {
+                        claim_id: (clm.claim_id),
+                        total_charge: (clm.total_charge),
+                        billing_provider: billing_provider.clone(),
+                        subscriber: subscriber.clone(),
+                        service_lines: (Vec::new()),
+                    })
+                }
+            }
+            Segment::Sv1(sv1) => {
+                let unexpected = unexpected();
+
+                let Some(Transaction::Claims(set)) = transactions.last_mut() else {
+                    return Err(unexpected(i, segment_id::CLM, segment_id::SV1));
+                };
+
+                let Some(claim) = set.claims.last_mut() else {
+                    return Err(unexpected(i, segment_id::CLM, segment_id::SV1));
+                };
+
+                claim.service_lines.push(ServiceLine {
+                    procedure_code: (sv1.procedure_code),
+                    charge: (sv1.charge),
+                    paid: (None),
+                })
+            }
+            Segment::Bpr(bpr) => {
+                if let Some(Transaction::Remittance(set)) = transactions.last_mut() {
+                    set.total_payment = bpr.total_payment
+                }
+            }
+            Segment::Clp(clp) => {
+                if let Some(Transaction::Remittance(set)) = transactions.last_mut() {
+                    set.remits.push(Remit {
+                        claim_id: (clp.claim_id),
+                        status_code: (clp.status_code),
+                        total_charge: (clp.total_charge),
+                        paid: (clp.paid),
+                        patient_responsibility: (clp.patient_responsibility),
+                        patient: (None),
+                        service_lines: (Vec::new()),
+                    })
+                }
+            }
+            Segment::Svc(svc) => {
+                let unexpected = unexpected();
+
+                let Some(Transaction::Remittance(set)) = transactions.last_mut() else {
+                    return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                };
+
+                let Some(remit) = set.remits.last_mut() else {
+                    return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                };
+
+                remit.service_lines.push(ServiceLine {
+                    procedure_code: (svc.procedure_code),
+                    charge: (svc.charge),
+                    paid: (Some(svc.paid)),
+                })
+            }
+            _ => {}
+        }
+    }
+
+    // write the interchange to the return value
+    let isa = header.unwrap();
+    Ok(Interchange {
+        sender_id: isa.sender_id.trim(),
+        receiver_id: isa.receiver_id.trim(),
+        control_number: isa.control_number,
+        transactions,
+    })
+}
+
+fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {
+    let unexpected = |i: usize, expected: &str, found: &str| EdiError::UnexpectedSegment {
+        position: i,
+        expected: expected.to_string(),
+        found: found.to_string(),
+    };
+    unexpected
 }
 
 /// Parse a whole file: `parse_segments` → `check_envelope` → `build_interchange`.
 /// Three fallible steps; this should be three lines and three `?`s.
 pub fn parse_str<'a>(input: &'a str) -> Result<Interchange<'a>, EdiError> {
-    todo!("Task 4: wire the pipeline together with ?")
+    let segments = parse_segments(input)?;
+    check_envelope(&segments)?;
+    return build_interchange(segments);
 }
 
 /// Serialize an interchange to JSON (pretty-printed if `pretty`).
