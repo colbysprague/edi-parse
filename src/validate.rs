@@ -33,8 +33,70 @@ pub trait Validate {
 ///    [`AMOUNT_TOLERANCE`]) → else `ChargeMismatch`. Skip if there are no lines.
 impl Validate for Claim<'_> {
     fn validate(&self) -> Result<(), Vec<ValidationError>> {
-        todo!("Task 6")
+        let mut validation_errors = Vec::new();
+        let negative_amount_err = negative_amount_err();
+
+        if self.claim_id.is_empty() {
+            validation_errors.push(ValidationError::EmptyClaimId);
+        }
+
+        if is_neg_amount(self.total_charge) {
+            validation_errors.push(negative_amount_err(
+                self.claim_id.to_string(),
+                "total_charge",
+                self.total_charge,
+            ))
+        }
+
+        if self.service_lines.first().is_none() {
+            validation_errors.push(ValidationError::NoServiceLines {
+                claim_id: (self.claim_id.to_string()),
+            })
+        }
+
+        let serv_line_total: f64 = self
+            .service_lines
+            .iter()
+            .filter_map(|line| {
+                if is_neg_amount(line.charge) {
+                    validation_errors.push(negative_amount_err(
+                        self.claim_id.to_string(),
+                        "line_charge",
+                        line.charge,
+                    ));
+                    None
+                } else {
+                    Some(line.charge)
+                }
+            })
+            .sum();
+
+        let diff = self.total_charge - (&serv_line_total);
+        if diff > AMOUNT_TOLERANCE {
+            validation_errors.push(ValidationError::ChargeMismatch {
+                claim_id: (self.claim_id.to_string()),
+                declared: (self.total_charge),
+                computed: (serv_line_total),
+            })
+        }
+
+        return match validation_errors.is_empty() {
+            true => Ok(()),
+            false => Err(validation_errors),
+        };
     }
+}
+
+fn negative_amount_err() -> impl Fn(String, &'static str, f64) -> ValidationError {
+    |claim_id, field, value| ValidationError::NegativeAmount {
+        claim_id,
+        field,
+        value,
+    }
+}
+
+fn is_neg_amount(amount: f64) -> bool {
+    !(amount >= 0.0)
 }
 
 /// Rules:
