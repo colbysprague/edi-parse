@@ -16,6 +16,7 @@
 
 use crate::error::EdiError;
 use crate::segment::Segment;
+use crate::segment_id;
 
 /// A person or organization from an `NM1` segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -119,7 +120,59 @@ pub struct Interchange<'a> {
 /// 5. `SE02` equals `ST02` → else [`EdiError::ControlNumberMismatch`] with
 ///    `segment: "SE"`.
 pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
-    todo!("Task 4: envelope checks")
+    let Some(Segment::Isa(_)) = segments.first() else {
+        return Err(EdiError::MissingIsa);
+    };
+    let Some(Segment::Iea(_)) = segments.last() else {
+        return Err(EdiError::MissingIea);
+    };
+
+    let unexpected = |i: usize, expected: &str, found: &str| EdiError::UnexpectedSegment {
+        position: i,
+        expected: expected.to_string(),
+        found: found.to_string(),
+    };
+
+    let mut open = None;
+
+    for (i, seg) in segments.iter().enumerate() {
+        match seg {
+            Segment::St(st) => {
+                if open.is_some() {
+                    return Err(unexpected(i, segment_id::SE, seg.id()));
+                }
+                open = Some((i, st));
+            }
+            Segment::Se(se) => {
+                let Some((start, st)) = open.take() else {
+                    return Err(unexpected(i, segment_id::ST, seg.id()));
+                };
+
+                let actual = i - start + 1;
+                if se.segment_count != actual {
+                    return Err(EdiError::SegmentCountMismatch {
+                        control_number: se.control_number.to_string(),
+                        declared: se.segment_count,
+                        actual,
+                    });
+                }
+
+                if se.control_number != st.control_number {
+                    return Err(EdiError::ControlNumberMismatch {
+                        segment: segment_id::SE.to_string(),
+                        expected: st.control_number.to_string(),
+                        found: se.control_number.to_string(),
+                    });
+                }
+            }
+            Segment::Ge(_) | Segment::Iea(_) if open.is_some() => {
+                return Err(unexpected(i, segment_id::SE, seg.id()));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 /// Group a checked segment list into an [`Interchange`].
