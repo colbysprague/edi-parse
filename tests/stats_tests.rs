@@ -57,6 +57,27 @@ fn summary_of_835() {
 }
 
 #[test]
+fn procedure_counts_ignore_modifiers_and_descriptions() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CLM*A1*40.00",
+            "SV1*HC:98940*10.00",
+            "SV1*HC:98940:AT*10.00",
+            "SV1*HC:J3490:::::Hep Lock see NDC#*10.00",
+            "SV1*HC:J3490:::::Sod Chl 0.9% see NDC#*10.00",
+            "SE*7*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        Summary::from_interchange(&ic).procedure_counts,
+        counts(&[("98940", 2), ("J3490", 2)])
+    );
+}
+
+#[test]
 fn summary_counts_validation_errors() {
     let bad = |id| Claim {
         claim_id: id,
@@ -66,6 +87,8 @@ fn summary_counts_validation_errors() {
         patient: None,
         service_lines: vec![ServiceLine {
             procedure_code: "99213",
+            modifiers: Vec::new(),
+            description: None,
             charge: 1.0,
             paid: None,
         }],

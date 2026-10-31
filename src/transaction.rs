@@ -193,11 +193,9 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                     return Err(unexpected(i, segment_id::CLM, segment_id::SV1));
                 };
 
-                claim.service_lines.push(ServiceLine {
-                    procedure_code: (sv1.procedure_code),
-                    charge: (sv1.charge),
-                    paid: (None),
-                })
+                claim
+                    .service_lines
+                    .push(ServiceLine::new(sv1.procedure, sv1.charge, None))
             }
             Segment::Bpr(bpr) => {
                 if let Some(Transaction::Remittance(set)) = transactions.last_mut() {
@@ -228,11 +226,11 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                     return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
                 };
 
-                remit.service_lines.push(ServiceLine {
-                    procedure_code: (svc.procedure_code),
-                    charge: (svc.charge),
-                    paid: (Some(svc.paid)),
-                })
+                remit.service_lines.push(ServiceLine::new(
+                    svc.procedure,
+                    svc.charge,
+                    Some(svc.paid),
+                ))
             }
             _ => {}
         }

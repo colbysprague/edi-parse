@@ -152,8 +152,12 @@ fn sv1_splits_composite_procedure() {
     assert_eq!(
         parse("SV1*HC:99213*100.00*UN*1***1"),
         Segment::Sv1(Sv1 {
-            qualifier: Some("HC"),
-            procedure_code: "99213",
+            procedure: Procedure {
+                qualifier: Some("HC"),
+                code: "99213",
+                modifiers: Vec::new(),
+                description: None,
+            },
             charge: 100.0,
             units: Some(1.0),
         })
@@ -175,8 +179,8 @@ fn sv1_uses_the_component_separator_from_delimiters() {
     let Segment::Sv1(sv1) = Segment::from_raw(raw, &pipes).unwrap() else {
         panic!("not SV1")
     };
-    assert_eq!(sv1.qualifier, Some("HC"));
-    assert_eq!(sv1.procedure_code, "36415");
+    assert_eq!(sv1.procedure.qualifier, Some("HC"));
+    assert_eq!(sv1.procedure.code, "36415");
     assert_eq!(sv1.units, Some(2.0));
 }
 
@@ -185,9 +189,54 @@ fn sv1_without_component_separator_or_units() {
     let Segment::Sv1(sv1) = parse("SV1*99213*100.00") else {
         panic!("not SV1")
     };
-    assert_eq!(sv1.qualifier, None);
-    assert_eq!(sv1.procedure_code, "99213");
+    assert_eq!(sv1.procedure.qualifier, None);
+    assert_eq!(sv1.procedure.code, "99213");
     assert_eq!(sv1.units, None);
+}
+
+#[test]
+fn procedure_with_modifiers() {
+    assert_eq!(
+        Procedure::parse("HC:K0001:RR:KH:BR", ':'),
+        Procedure {
+            qualifier: Some("HC"),
+            code: "K0001",
+            modifiers: vec!["RR", "KH", "BR"],
+            description: None,
+        }
+    );
+}
+
+#[test]
+fn procedure_with_description_after_empty_modifiers() {
+    assert_eq!(
+        Procedure::parse("HC:J3490:::::Hep Lock see NDC#", ':'),
+        Procedure {
+            qualifier: Some("HC"),
+            code: "J3490",
+            modifiers: Vec::new(),
+            description: Some("Hep Lock see NDC#"),
+        }
+    );
+}
+
+#[test]
+fn procedure_with_four_modifiers_and_description() {
+    let procedure = Procedure::parse("HC:99213:A:B:C:D:TEXT", ':');
+    assert_eq!(procedure.modifiers, ["A", "B", "C", "D"]);
+    assert_eq!(procedure.description, Some("TEXT"));
+}
+
+#[test]
+fn procedure_ignores_components_after_the_description() {
+    let procedure = Procedure::parse("HC:99213:::::TEXT:EXTRA", ':');
+    assert_eq!(procedure.description, Some("TEXT"));
+}
+
+#[test]
+fn procedure_skips_empty_modifier_positions() {
+    let procedure = Procedure::parse("HC:99213::25", ':');
+    assert_eq!(procedure.modifiers, ["25"]);
 }
 
 #[test]
@@ -232,8 +281,12 @@ fn svc() {
     assert_eq!(
         parse("SVC*HC:99213*100.00*80.00**1"),
         Segment::Svc(Svc {
-            qualifier: Some("HC"),
-            procedure_code: "99213",
+            procedure: Procedure {
+                qualifier: Some("HC"),
+                code: "99213",
+                modifiers: Vec::new(),
+                description: None,
+            },
             charge: 100.0,
             paid: 80.0
         })

@@ -122,7 +122,7 @@ fn parse_segments_uses_detected_component_separator() {
     let codes: Vec<&str> = segs
         .iter()
         .filter_map(|s| match s {
-            Segment::Sv1(sv1) => Some(sv1.procedure_code),
+            Segment::Sv1(sv1) => Some(sv1.procedure.code),
             _ => None,
         })
         .collect();
