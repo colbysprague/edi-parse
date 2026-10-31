@@ -26,6 +26,8 @@ fn remittance<'a>(ic: &'a Interchange<'a>) -> &'a edi_parse::Remittance<'a> {
 fn line(procedure_code: &str, charge: f64, paid: Option<f64>) -> ServiceLine<'_> {
     ServiceLine {
         procedure_code,
+        modifiers: Vec::new(),
+        description: None,
         charge,
         paid,
     }
@@ -508,6 +510,63 @@ fn service_line_before_any_claim() {
 }
 
 #[test]
+fn service_lines_keep_modifiers_and_description() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CLM*A1*20.00",
+            "SV1*HC:K0001:RR:KH:BR*10.00",
+            "SV1*HC:J3490:::::Hep Lock see NDC#*10.00",
+            "SE*5*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let v: Value = serde_json::from_str(&to_json(&ic, false).unwrap()).unwrap();
+    let lines = &v["transactions"][0]["claims"][0]["service_lines"];
+    assert_eq!(
+        lines[0],
+        json!({ "procedure_code": "K0001", "modifiers": ["RR", "KH", "BR"], "charge": 10.0 })
+    );
+    assert_eq!(
+        lines[1],
+        json!({ "procedure_code": "J3490", "description": "Hep Lock see NDC#", "charge": 10.0 })
+    );
+}
+
+#[test]
+fn remit_lines_keep_modifiers() {
+    let input = envelope(
+        "HP",
+        &[
+            "ST*835*0001",
+            "BPR*I*8.00",
+            "CLP*C1*1*10.00*8.00",
+            "SVC*HC:99213:25*10.00*8.00",
+            "SE*5*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let line = &remittance(&ic).remits[0].service_lines[0];
+    assert_eq!(line.procedure_code, "99213");
+    assert_eq!(line.modifiers, ["25"]);
+}
+
+#[test]
+fn component_separator_does_not_change_the_result() {
+    for sep in [':', '>', '|'] {
+        let mut input = isa('*', '^', sep, '~');
+        input.push_str("GS*HC*S*R*20261017*1200*1*X*005010~ST*837*0001~CLM*A1*10.00~");
+        input.push_str(&format!("SV1*HC{sep}K0001{sep}RR{sep}KH*10.00~"));
+        input.push_str("SE*4*0001~GE*1*1~IEA*1*000000001~");
+        let ic = parse_str(&input).unwrap();
+        let line = &claims(&ic).claims[0].service_lines[0];
+        assert_eq!(line.procedure_code, "K0001", "{sep}");
+        assert_eq!(line.modifiers, ["RR", "KH"], "{sep}");
+    }
+}
+
+#[test]
 fn parsed_data_borrows_from_input() {
     let input = sample(S_837_MULTI);
     let range = input.as_bytes().as_ptr_range();
@@ -521,6 +580,10 @@ fn parsed_data_borrows_from_input() {
             assert!(
                 range.contains(&l.procedure_code.as_ptr()),
                 "procedure_code was copied"
+            );
+            assert!(
+                l.modifiers.iter().all(|m| range.contains(&m.as_ptr())),
+                "modifiers were copied"
             );
         }
     }

@@ -138,15 +138,60 @@ segment_def! {
     }
 }
 
+/// A composite procedure identifier, such as SV101 or SVC01.
+///
+/// ```text
+/// HC:K0001:RR:KH:BR                HC:J3490:::::Hep Lock see NDC#
+/// 1  2     3  4  5                 1  2     3-6 7
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct Procedure<'a> {
+    /// Component 1 (`HC`). `None` when the element has no component separator.
+    pub qualifier: Option<&'a str>,
+    /// Component 2 (`K0001`), or the whole element when it has no component
+    /// separator.
+    pub code: &'a str,
+    /// Components 3-6, with empty positions left out.
+    pub modifiers: Vec<&'a str>,
+    /// Component 7, if present.
+    pub description: Option<&'a str>,
+}
+
+impl<'a> Procedure<'a> {
+    /// Split a composite on `separator`, the file's component separator.
+    pub fn parse(value: &'a str, separator: char) -> Self {
+        let Some((qualifier, rest)) = value.split_once(separator) else {
+            return Procedure {
+                qualifier: None,
+                code: value,
+                modifiers: Vec::new(),
+                description: None,
+            };
+        };
+
+        let mut components = rest.split(separator);
+        let code = components.next().unwrap_or_default();
+        let modifiers = components
+            .by_ref()
+            .take(4)
+            .filter(|modifier| !modifier.is_empty())
+            .collect();
+        let description = components.next().filter(|text| !text.is_empty());
+
+        Procedure {
+            qualifier: Some(qualifier),
+            code,
+            modifiers,
+            description,
+        }
+    }
+}
+
 /// `SV1`: professional service line (837P).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sv1<'a> {
-    /// First component of composite SV101 (`HC` in `HC:99213`). `None` when
-    /// SV101 has no component separator.
-    pub qualifier: Option<&'a str>,
-    /// Procedure code: second component of SV101 (`99213`), or all of SV101
-    /// when it has no component separator.
-    pub procedure_code: &'a str,
+    /// SV101.
+    pub procedure: Procedure<'a>,
     /// SV102: line charge.
     pub charge: f64,
     /// SV104: units. Optional, but if present it must be numeric.
@@ -155,12 +200,8 @@ pub struct Sv1<'a> {
 
 impl<'a> Sv1<'a> {
     pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
-        let (qualifier, procedure_code) =
-            split_composite(element::<&'a str>(raw, 1)?, delims.component);
-
         Ok(Sv1 {
-            qualifier: qualifier,
-            procedure_code: procedure_code,
+            procedure: Procedure::parse(element::<&'a str>(raw, 1)?, delims.component),
             charge: element::<f64>(raw, 2)?,
             units: element::<Option<f64>>(raw, 4)?,
         })
@@ -187,10 +228,8 @@ segment_def! {
 /// `SVC`: service payment information (835).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Svc<'a> {
-    /// First component of composite SVC01, as in [`Sv1::qualifier`].
-    pub qualifier: Option<&'a str>,
-    /// Procedure code from SVC01, as in [`Sv1::procedure_code`].
-    pub procedure_code: &'a str,
+    /// SVC01.
+    pub procedure: Procedure<'a>,
     /// SVC02: line charge.
     pub charge: f64,
     /// SVC03: line payment.
@@ -199,12 +238,8 @@ pub struct Svc<'a> {
 
 impl<'a> Svc<'a> {
     pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
-        let (qualifier, procedure_code) =
-            split_composite(element::<&'a str>(raw, 1)?, delims.component);
-
         Ok(Svc {
-            qualifier: qualifier,
-            procedure_code: procedure_code,
+            procedure: Procedure::parse(element::<&'a str>(raw, 1)?, delims.component),
             charge: element::<f64>(raw, 2)?,
             paid: element::<f64>(raw, 3)?,
         })
@@ -407,11 +442,4 @@ pub fn parse_segments<'a>(input: &'a str) -> Result<Vec<Segment<'a>>, EdiError> 
         .into_iter()
         .map(|segment| Segment::from_raw(segment, &delims))
         .collect()
-}
-
-fn split_composite(value: &str, sep: char) -> (Option<&str>, &str) {
-    match value.split_once(sep) {
-        Some((qualifier, code)) => (Some(qualifier), code),
-        None => (None, value),
-    }
 }
