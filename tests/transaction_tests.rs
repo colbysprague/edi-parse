@@ -97,8 +97,9 @@ fn billing_provider_carries_to_every_claim() {
     let input = sample(S_837_MULTI);
     let ic = parse_str(&input).unwrap();
     let expected = Party {
-        last_name: Some("EXAMPLE CLINIC"),
+        last_name: None,
         first_name: None,
+        organization_name: Some("EXAMPLE CLINIC"),
         id: Some("1234567893"),
     };
     for claim in &claims(&ic).claims {
@@ -119,7 +120,7 @@ fn submitter_and_receiver_nm1_are_not_parties() {
     let ic = parse_str(&input).unwrap();
     let first = &claims(&ic).claims[0];
     assert_ne!(
-        first.billing_provider.as_ref().unwrap().last_name,
+        first.billing_provider.as_ref().unwrap().organization_name,
         Some("FAKE CLEARINGHOUSE")
     );
     assert_ne!(
@@ -144,7 +145,11 @@ fn pipe_delimited_837() {
         .collect();
     assert_eq!(codes, ["36415", "85025"]);
     assert_eq!(
-        set.claims[0].billing_provider.as_ref().unwrap().last_name,
+        set.claims[0]
+            .billing_provider
+            .as_ref()
+            .unwrap()
+            .organization_name,
         Some("SAMPLE MEDICAL GROUP")
     );
 }
@@ -171,6 +176,7 @@ fn groups_835_into_remits() {
         Some(Party {
             last_name: Some("DOE"),
             first_name: Some("JANE"),
+            organization_name: None,
             id: Some("MEMBER001")
         })
     );
@@ -251,7 +257,7 @@ fn multiple_transactions_in_one_interchange() {
             .billing_provider
             .as_ref()
             .unwrap()
-            .last_name,
+            .organization_name,
         Some("CLINIC B")
     );
 }
@@ -271,12 +277,70 @@ fn nm1_with_blank_name_does_not_fail_the_file() {
     );
     let ic = parse_str(&input).unwrap();
     let provider = claims(&ic).claims[0].billing_provider.as_ref().unwrap();
-    assert_eq!(provider.last_name, None);
+    assert_eq!(provider.organization_name, None);
     assert_eq!(provider.id, Some("1234567893"));
     assert_eq!(
         serde_json::to_value(provider).unwrap(),
         json!({ "id": "1234567893" })
     );
+}
+
+fn with_billing_provider(nm1: &str) -> String {
+    envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            nm1,
+            "CLM*A1*10.00",
+            "SV1*HC:99211*10.00",
+            "SE*5*0001",
+        ],
+    )
+}
+
+#[test]
+fn nm102_of_1_is_a_person() {
+    let input = with_billing_provider("NM1*85*1*JONES*ANN****XX*1234567893");
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        claims(&ic).claims[0].billing_provider,
+        Some(Party {
+            last_name: Some("JONES"),
+            first_name: Some("ANN"),
+            organization_name: None,
+            id: Some("1234567893"),
+        })
+    );
+}
+
+#[test]
+fn nm102_of_2_is_an_organization() {
+    let input = with_billing_provider("NM1*85*2*CLINIC*****XX*1234567893");
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        claims(&ic).claims[0].billing_provider,
+        Some(Party {
+            last_name: None,
+            first_name: None,
+            organization_name: Some("CLINIC"),
+            id: Some("1234567893"),
+        })
+    );
+}
+
+#[test]
+fn invalid_nm102_on_a_kept_nm1_is_an_error() {
+    let input = with_billing_provider("NM1*85*9*CLINIC*****XX*1234567893");
+    assert!(matches!(
+        parse_str(&input),
+        Err(EdiError::InvalidEntityType { value }) if value == "9"
+    ));
+}
+
+#[test]
+fn invalid_nm102_on_an_ignored_nm1_is_not_an_error() {
+    let input = with_billing_provider("NM1*87*9");
+    assert!(parse_str(&input).is_ok());
 }
 
 #[test]
@@ -362,7 +426,7 @@ fn json_837_shape() {
     assert_eq!(claim["total_charge"], 150.0);
     assert_eq!(
         claim["billing_provider"],
-        json!({ "last_name": "EXAMPLE CLINIC", "id": "1234567893" }),
+        json!({ "organization_name": "EXAMPLE CLINIC", "id": "1234567893" }),
         "None fields (first_name) should be omitted, not null"
     );
     assert_eq!(

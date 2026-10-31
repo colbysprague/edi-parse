@@ -139,31 +139,24 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                     ))
                 }
             },
-            Segment::Nm1(nm1) => {
-                let party = Party {
-                    first_name: nm1.first_name,
-                    last_name: nm1.last_name,
-                    id: nm1.id,
-                };
-                match nm1.entity_id {
-                    "85" => billing_provider = Some(party),
-                    "IL" => subscriber = Some(party),
-                    "QC" => {
-                        let unexpected = unexpected();
+            Segment::Nm1(nm1) => match nm1.entity_id {
+                "85" => billing_provider = Some(Party::from_nm1(&nm1)?),
+                "IL" => subscriber = Some(Party::from_nm1(&nm1)?),
+                "QC" => {
+                    let unexpected = unexpected();
 
-                        let Some(Transaction::Remittance(set)) = transactions.last_mut() else {
-                            return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
-                        };
+                    let Some(Transaction::Remittance(set)) = transactions.last_mut() else {
+                        return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                    };
 
-                        let Some(remit) = set.remits.last_mut() else {
-                            return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
-                        };
+                    let Some(remit) = set.remits.last_mut() else {
+                        return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
+                    };
 
-                        remit.patient = Some(party);
-                    }
-                    _ => {}
+                    remit.patient = Some(Party::from_nm1(&nm1)?);
                 }
-            }
+                _ => {}
+            },
             Segment::Clm(clm) => {
                 if let Some(Transaction::Claims(set)) = transactions.last_mut() {
                     set.claims.push(Claim {
