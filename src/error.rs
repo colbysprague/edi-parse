@@ -20,6 +20,14 @@ pub enum EdiError {
         source: std::io::Error,
     },
 
+    /// Writing an output file failed.
+    #[error("failed to write {path}: {source}")]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     /// The input (after leading whitespace) does not start with `ISA`.
     #[error("input does not begin with an ISA segment")]
     MissingIsa,
@@ -132,4 +140,33 @@ pub enum ValidationError {
 
     #[error("BPR02 total payment {declared:.2} != sum of CLP04 payments {computed:.2}")]
     RemittanceTotalMismatch { declared: f64, computed: f64 },
+}
+
+impl ValidationError {
+    /// The claim or remit this error is about. `None` when there's no ID to
+    /// report, or the error applies to a whole remittance.
+    pub fn claim_id(&self) -> Option<&str> {
+        match self {
+            ValidationError::NoServiceLines { claim_id }
+            | ValidationError::NegativeAmount { claim_id, .. }
+            | ValidationError::ChargeMismatch { claim_id, .. }
+            | ValidationError::PaymentMismatch { claim_id, .. }
+            | ValidationError::UnknownStatus { claim_id, .. } => Some(claim_id),
+            ValidationError::EmptyClaimId | ValidationError::RemittanceTotalMismatch { .. } => None,
+        }
+    }
+
+    /// A stable name for this kind of error, used in `summary.json` and
+    /// `validation_errors.json`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ValidationError::EmptyClaimId => "empty_claim_id",
+            ValidationError::NoServiceLines { .. } => "no_service_lines",
+            ValidationError::NegativeAmount { .. } => "negative_amount",
+            ValidationError::ChargeMismatch { .. } => "charge_mismatch",
+            ValidationError::PaymentMismatch { .. } => "payment_mismatch",
+            ValidationError::UnknownStatus { .. } => "unknown_status",
+            ValidationError::RemittanceTotalMismatch { .. } => "remittance_total_mismatch",
+        }
+    }
 }

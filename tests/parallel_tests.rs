@@ -6,8 +6,10 @@ use std::path::Path;
 
 use common::*;
 use edi_parse::{
-    collect_files, parse_dir, process_dir, process_file, write_summary, EdiError, Summary,
+    collect_files, parse_dir, process_dir, process_dir_with_log, process_file, write_summary,
+    EdiError, Summary, VALIDATION_LOG_FILE,
 };
+use serde_json::{json, Value};
 
 /// Parallel float sums can differ from sequential ones in the last bits,
 /// so compare totals approximately and everything else exactly.
@@ -21,6 +23,11 @@ fn assert_same(a: &Summary, b: &Summary) {
     assert_eq!(a.remits, b.remits);
     assert_eq!(a.service_lines, b.service_lines);
     assert_eq!(a.validation_errors, b.validation_errors);
+    assert_eq!(a.validation_error_counts, b.validation_error_counts);
+    assert_eq!(
+        a.files_with_validation_errors,
+        b.files_with_validation_errors
+    );
     assert_eq!(a.procedure_counts, b.procedure_counts);
     assert!((a.total_billed - b.total_billed).abs() < 1e-6);
     assert!((a.total_paid - b.total_paid).abs() < 1e-6);
@@ -238,4 +245,205 @@ fn parse_dir_on_missing_dir() {
         parse_dir(Path::new("/definitely/not/a/real/dir"), &out, false),
         Err(EdiError::Io { .. })
     ));
+}
+
+/// One claim with a charge mismatch, and one with no service lines.
+fn two_bad_claims() -> String {
+    envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CLM*C1*90.00",
+            "SV1*HC:99213*80.00",
+            "CLM*C2*10.00",
+            "SE*5*0001",
+        ],
+    )
+}
+
+fn remittance_total_mismatch() -> String {
+    envelope(
+        "HP",
+        &[
+            "ST*835*0001",
+            "BPR*I*5.00",
+            "CLP*C1*1*10.00*10.00",
+            "SVC*HC:99213*10.00*10.00",
+            "SE*5*0001",
+        ],
+    )
+}
+
+/// The log's entries, parsed as one JSON document and sorted, since a parallel
+/// run writes them in no fixed order.
+fn log_entries(out: &Path) -> Vec<Value> {
+    let text = std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap();
+    let mut entries: Vec<Value> = serde_json::from_str(&text).unwrap();
+    entries.sort_by_key(Value::to_string);
+    entries
+}
+
+#[test]
+fn parse_dir_writes_each_validation_error_with_its_file() {
+    let dir = temp_dir("log-input");
+    let out = temp_dir("log-output");
+    std::fs::create_dir(dir.join("nested")).unwrap();
+    let src = dir.join("nested").join("bad.edi");
+    std::fs::write(&src, two_bad_claims()).unwrap();
+
+    let report = parse_dir(&dir, &out, false).unwrap();
+    let file = src.to_string_lossy();
+    assert_eq!(
+        log_entries(&out),
+        [
+            json!({
+                "file": file,
+                "claim_id": "C1",
+                "type": "charge_mismatch",
+                "message": "declared charge 90.00 != service line total 80.00",
+            }),
+            json!({
+                "file": file,
+                "claim_id": "C2",
+                "type": "no_service_lines",
+                "message": "has no service lines",
+            }),
+        ]
+    );
+    assert_eq!(report.summary.validation_errors, 2);
+    assert_eq!(report.summary.files_with_validation_errors, 1);
+}
+
+#[test]
+fn error_with_no_claim_leaves_out_claim_id() {
+    let dir = temp_dir("log-no-claim-input");
+    let out = temp_dir("log-no-claim-output");
+    std::fs::write(dir.join("bad.edi"), remittance_total_mismatch()).unwrap();
+
+    parse_dir(&dir, &out, false).unwrap();
+    let entries = log_entries(&out);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["type"], "remittance_total_mismatch");
+    assert!(entries[0].get("claim_id").is_none());
+}
+
+#[test]
+fn parallel_and_sequential_logs_have_the_same_entries() {
+    let dir = temp_dir("log-modes-input");
+    for i in 0..50 {
+        std::fs::write(dir.join(format!("{i}.edi")), two_bad_claims()).unwrap();
+    }
+    std::fs::write(dir.join("clean.edi"), sample(S_837_MULTI)).unwrap();
+
+    let parallel_out = temp_dir("log-modes-parallel");
+    let sequential_out = temp_dir("log-modes-sequential");
+    let parallel = process_dir_with_log(&dir, true, &parallel_out).unwrap();
+    let sequential = process_dir_with_log(&dir, false, &sequential_out).unwrap();
+
+    assert_same(&parallel, &sequential);
+    assert_eq!(parallel.validation_errors, 100);
+    assert_eq!(parallel.files_with_validation_errors, 50);
+    assert_eq!(log_entries(&parallel_out).len(), 100);
+    assert_eq!(log_entries(&parallel_out), log_entries(&sequential_out));
+}
+
+#[test]
+fn clean_run_replaces_an_earlier_log_with_an_empty_one() {
+    let dir = temp_dir("log-clean-input");
+    let out = temp_dir("log-clean-output");
+    let src = dir.join("file.edi");
+
+    std::fs::write(&src, two_bad_claims()).unwrap();
+    process_dir_with_log(&dir, true, &out).unwrap();
+    assert_eq!(log_entries(&out).len(), 2);
+
+    std::fs::write(&src, sample(S_837_MULTI)).unwrap();
+    process_dir_with_log(&dir, true, &out).unwrap();
+    assert!(log_entries(&out).is_empty());
+
+    std::fs::write(&src, two_bad_claims()).unwrap();
+    parse_dir(&dir, &out, false).unwrap();
+    assert_eq!(log_entries(&out).len(), 2);
+
+    std::fs::write(&src, sample(S_837_MULTI)).unwrap();
+    parse_dir(&dir, &out, false).unwrap();
+    assert!(log_entries(&out).is_empty());
+}
+
+#[test]
+fn missing_input_dir_keeps_the_earlier_log() {
+    let out = temp_dir("log-missing-input");
+    std::fs::write(out.join(VALIDATION_LOG_FILE), "earlier\n").unwrap();
+
+    let missing = Path::new("/definitely/not/a/real/dir");
+    assert!(process_dir_with_log(missing, true, &out).is_err());
+    assert!(parse_dir(missing, &out, false).is_err());
+    assert_eq!(
+        std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap(),
+        "earlier\n"
+    );
+}
+
+#[test]
+fn failing_to_write_the_log_is_an_error() {
+    let dir = temp_dir("log-unwritable-input");
+    let blocker = temp_dir("log-unwritable-output").join("not-a-dir");
+    std::fs::write(&blocker, "x").unwrap();
+
+    assert!(matches!(
+        process_dir_with_log(&dir, true, &blocker),
+        Err(EdiError::Write { .. })
+    ));
+    assert!(matches!(
+        parse_dir(&dir, &blocker, false),
+        Err(EdiError::Write { .. })
+    ));
+}
+
+#[test]
+fn summary_without_out_reports_counts_and_writes_no_log() {
+    let dir = temp_dir("log-cli-input");
+    let cwd = temp_dir("log-cli-cwd");
+    std::fs::write(dir.join("bad.edi"), two_bad_claims()).unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_edi-parse"))
+        .arg("summary")
+        .arg(&dir)
+        .current_dir(&cwd)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        summary["validation_error_counts"],
+        json!({ "charge_mismatch": 1, "no_service_lines": 1 })
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("use --out"));
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+    assert_eq!(std::fs::read_dir(&cwd).unwrap().count(), 0);
+}
+
+#[test]
+fn log_entries_are_pretty_printed() {
+    let dir = temp_dir("log-pretty-input");
+    let out = temp_dir("log-pretty-output");
+    std::fs::write(dir.join("bad.edi"), two_bad_claims()).unwrap();
+
+    process_dir_with_log(&dir, true, &out).unwrap();
+    let text = std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap();
+    assert!(text.starts_with("[\n  {\n    \"file\": "), "{text}");
+    assert!(text.ends_with("\n  }\n]\n"), "{text}");
+}
+
+#[test]
+fn clean_run_writes_an_empty_array() {
+    let dir = temp_dir("log-empty-input");
+    let out = temp_dir("log-empty-output");
+
+    process_dir_with_log(&dir, true, &out).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap(),
+        "[]\n"
+    );
 }

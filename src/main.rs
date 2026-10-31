@@ -4,7 +4,8 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand};
 use edi_parse::{
-    parse_dir, parse_str, parse_to_file, process_dir, to_json, write_summary, EdiError, Validate,
+    parse_dir, parse_str, parse_to_file, process_dir, process_dir_with_log, to_json, write_summary,
+    EdiError, Summary, Validate, VALIDATION_LOG_FILE,
 };
 
 /// Parse, validate, and summarize X12 835/837P EDI files.
@@ -39,7 +40,8 @@ enum Command {
         /// How many top procedure codes to print to stderr.
         #[arg(long, default_value_t = 5)]
         top: usize,
-        /// Write summary.json to this directory instead of printing to stdout.
+        /// Write summary.json and validation_errors.json to this directory,
+        /// instead of printing the summary to stdout.
         #[arg(long, short)]
         out: Option<PathBuf>,
     },
@@ -111,6 +113,7 @@ fn cmd_parse_dir(
         out.display(),
     );
     eprintln!("summary written to {}", summary_path.display());
+    report_validation_log(&report.summary, out);
     if report.failed.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -136,6 +139,16 @@ fn cmd_validate(file: &Path) -> Result<ExitCode, Box<dyn std::error::Error>> {
     }
 }
 
+fn report_validation_log(summary: &Summary, out: &Path) {
+    if summary.validation_errors > 0 {
+        eprintln!(
+            "{} validation error(s) written to {}",
+            summary.validation_errors,
+            out.join(VALIDATION_LOG_FILE).display(),
+        );
+    }
+}
+
 fn cmd_summary(
     dir: &Path,
     parallel: bool,
@@ -143,15 +156,24 @@ fn cmd_summary(
     out: Option<&Path>,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let start = Instant::now();
-    let summary = process_dir(dir, parallel)?;
+    let summary = match out {
+        Some(out) => process_dir_with_log(dir, parallel, out)?,
+        None => process_dir(dir, parallel)?,
+    };
     let elapsed = start.elapsed();
 
     match out {
         Some(out) => {
             let dest = write_summary(&summary, out)?;
             eprintln!("summary written to {}", dest.display());
+            report_validation_log(&summary, out);
         }
-        None => println!("{}", serde_json::to_string_pretty(&summary)?),
+        None => {
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            if summary.validation_errors > 0 {
+                eprintln!("use --out to write each validation error to {VALIDATION_LOG_FILE}");
+            }
+        }
     }
 
     eprintln!(

@@ -24,11 +24,12 @@ pub mod stats;
 pub mod tokenizer;
 pub mod transaction;
 pub mod validate;
+pub mod validation_log;
 
 pub use error::{EdiError, ValidationError};
 pub use parallel::{
-    collect_files, collect_files_recursive, parse_dir, parse_to_file, process_dir, process_file,
-    write_summary, ParseDirReport,
+    collect_files, collect_files_recursive, parse_dir, parse_to_file, process_dir,
+    process_dir_with_log, process_file, write_summary, ParseDirReport,
 };
 pub use segment::{parse_segments, Segment};
 pub use stats::Summary;
@@ -38,3 +39,4 @@ pub use transaction::{
     Remit, Remittance, ServiceLine, Transaction,
 };
 pub use validate::{validate_all, Validate};
+pub use validation_log::{ValidationLog, VALIDATION_LOG_FILE};
