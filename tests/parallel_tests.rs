@@ -274,14 +274,13 @@ fn remittance_total_mismatch() -> String {
     )
 }
 
-fn log_lines(out: &Path) -> Vec<Value> {
-    let mut lines: Vec<Value> = std::fs::read_to_string(out.join(VALIDATION_LOG_FILE))
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    lines.sort_by_key(Value::to_string);
-    lines
+/// The log's entries, parsed as one JSON document and sorted, since a parallel
+/// run writes them in no fixed order.
+fn log_entries(out: &Path) -> Vec<Value> {
+    let text = std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap();
+    let mut entries: Vec<Value> = serde_json::from_str(&text).unwrap();
+    entries.sort_by_key(Value::to_string);
+    entries
 }
 
 #[test]
@@ -295,7 +294,7 @@ fn parse_dir_writes_each_validation_error_with_its_file() {
     let report = parse_dir(&dir, &out, false).unwrap();
     let file = src.to_string_lossy();
     assert_eq!(
-        log_lines(&out),
+        log_entries(&out),
         [
             json!({
                 "file": file,
@@ -322,14 +321,14 @@ fn error_with_no_claim_leaves_out_claim_id() {
     std::fs::write(dir.join("bad.edi"), remittance_total_mismatch()).unwrap();
 
     parse_dir(&dir, &out, false).unwrap();
-    let lines = log_lines(&out);
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0]["type"], "remittance_total_mismatch");
-    assert!(lines[0].get("claim_id").is_none());
+    let entries = log_entries(&out);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["type"], "remittance_total_mismatch");
+    assert!(entries[0].get("claim_id").is_none());
 }
 
 #[test]
-fn parallel_and_sequential_logs_have_the_same_lines() {
+fn parallel_and_sequential_logs_have_the_same_entries() {
     let dir = temp_dir("log-modes-input");
     for i in 0..50 {
         std::fs::write(dir.join(format!("{i}.edi")), two_bad_claims()).unwrap();
@@ -344,8 +343,8 @@ fn parallel_and_sequential_logs_have_the_same_lines() {
     assert_same(&parallel, &sequential);
     assert_eq!(parallel.validation_errors, 100);
     assert_eq!(parallel.files_with_validation_errors, 50);
-    assert_eq!(log_lines(&parallel_out).len(), 100);
-    assert_eq!(log_lines(&parallel_out), log_lines(&sequential_out));
+    assert_eq!(log_entries(&parallel_out).len(), 100);
+    assert_eq!(log_entries(&parallel_out), log_entries(&sequential_out));
 }
 
 #[test]
@@ -356,19 +355,19 @@ fn clean_run_replaces_an_earlier_log_with_an_empty_one() {
 
     std::fs::write(&src, two_bad_claims()).unwrap();
     process_dir_with_log(&dir, true, &out).unwrap();
-    assert_eq!(log_lines(&out).len(), 2);
+    assert_eq!(log_entries(&out).len(), 2);
 
     std::fs::write(&src, sample(S_837_MULTI)).unwrap();
     process_dir_with_log(&dir, true, &out).unwrap();
-    assert!(log_lines(&out).is_empty());
+    assert!(log_entries(&out).is_empty());
 
     std::fs::write(&src, two_bad_claims()).unwrap();
     parse_dir(&dir, &out, false).unwrap();
-    assert_eq!(log_lines(&out).len(), 2);
+    assert_eq!(log_entries(&out).len(), 2);
 
     std::fs::write(&src, sample(S_837_MULTI)).unwrap();
     parse_dir(&dir, &out, false).unwrap();
-    assert!(log_lines(&out).is_empty());
+    assert!(log_entries(&out).is_empty());
 }
 
 #[test]
@@ -423,4 +422,28 @@ fn summary_without_out_reports_counts_and_writes_no_log() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("use --out"));
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
     assert_eq!(std::fs::read_dir(&cwd).unwrap().count(), 0);
+}
+
+#[test]
+fn log_entries_are_pretty_printed() {
+    let dir = temp_dir("log-pretty-input");
+    let out = temp_dir("log-pretty-output");
+    std::fs::write(dir.join("bad.edi"), two_bad_claims()).unwrap();
+
+    process_dir_with_log(&dir, true, &out).unwrap();
+    let text = std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap();
+    assert!(text.starts_with("[\n  {\n    \"file\": "), "{text}");
+    assert!(text.ends_with("\n  }\n]\n"), "{text}");
+}
+
+#[test]
+fn clean_run_writes_an_empty_array() {
+    let dir = temp_dir("log-empty-input");
+    let out = temp_dir("log-empty-output");
+
+    process_dir_with_log(&dir, true, &out).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(out.join(VALIDATION_LOG_FILE)).unwrap(),
+        "[]\n"
+    );
 }

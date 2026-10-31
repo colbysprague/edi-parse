@@ -40,7 +40,7 @@ enum Command {
         /// How many top procedure codes to print to stderr.
         #[arg(long, default_value_t = 5)]
         top: usize,
-        /// Write summary.json and validation_errors.jsonl to this directory,
+        /// Write summary.json and validation_errors.json to this directory,
         /// instead of printing the summary to stdout.
         #[arg(long, short)]
         out: Option<PathBuf>,

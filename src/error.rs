@@ -157,7 +157,7 @@ impl ValidationError {
     }
 
     /// A stable name for this kind of error, used in `summary.json` and
-    /// `validation_errors.jsonl`.
+    /// `validation_errors.json`.
     pub fn kind(&self) -> &'static str {
         match self {
             ValidationError::EmptyClaimId => "empty_claim_id",

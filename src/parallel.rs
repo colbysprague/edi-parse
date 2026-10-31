@@ -119,7 +119,7 @@ pub fn write_summary(summary: &Summary, out: &Path) -> Result<PathBuf, Box<dyn s
 
 /// Parse every file under `dir` (recursively, in parallel) and write each one
 /// to `out` as `.json`, mirroring the layout of `dir`. Validation errors go to
-/// `<out>/validation_errors.jsonl` (see [`ValidationLog`]).
+/// `<out>/validation_errors.json` (see [`ValidationLog`]).
 ///
 /// A file that fails is recorded in the report and gets no output file; it
 /// does not abort the run. Only failing to list `dir`, or to write the
@@ -191,7 +191,7 @@ pub fn process_dir(dir: &Path, parallel: bool) -> Result<Summary, EdiError> {
 }
 
 /// [`process_dir`], also writing validation errors to
-/// `<out>/validation_errors.jsonl` (see [`ValidationLog`]).
+/// `<out>/validation_errors.json` (see [`ValidationLog`]).
 ///
 /// Failing to write that file is an `Err`, as well as failing to list `dir`.
 pub fn process_dir_with_log(dir: &Path, parallel: bool, out: &Path) -> Result<Summary, EdiError> {
