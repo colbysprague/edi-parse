@@ -1,4 +1,4 @@
-//! Task 4: error handling for malformed files: `parse_segments`,
+//! Error handling for malformed files: `parse_segments`,
 //! `check_envelope`, and the `?`-driven `parse_str` pipeline.
 
 mod common;

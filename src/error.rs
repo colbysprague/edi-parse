@@ -1,4 +1,4 @@
-//! Error types. These are complete: you construct them, you don't edit them.
+//! Error types.
 //!
 //! Note that errors own their data (`String`, not `&'a str`). An error often
 //! needs to outlive the input buffer it came from (e.g. when a file fails inside

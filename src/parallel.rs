@@ -1,4 +1,4 @@
-//! Task 8: process a directory of files, optionally in parallel with rayon.
+//! Process a directory of files, optionally in parallel with rayon.
 
 use std::fs;
 use std::path::{Path, PathBuf};

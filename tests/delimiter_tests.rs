@@ -1,4 +1,4 @@
-//! Task 2: `Delimiters::detect` and `tokenize`.
+//! `Delimiters::detect` and `tokenize`.
 
 mod common;
 

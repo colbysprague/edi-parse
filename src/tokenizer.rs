@@ -1,4 +1,4 @@
-//! Tasks 1 and 2: split raw text into segments and elements without copying.
+//! Split raw text into segments and elements without copying.
 //!
 //! X12 uses four delimiters, all declared by the fixed-width ISA header:
 //!
