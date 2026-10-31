@@ -48,7 +48,7 @@ impl Validate for Claim<'_> {
             ))
         }
 
-        if self.service_lines.first().is_none() {
+        if self.service_lines.is_empty() {
             validation_errors.push(ValidationError::NoServiceLines {
                 claim_id: (self.claim_id.to_string()),
             })
@@ -76,10 +76,10 @@ impl Validate for Claim<'_> {
             })
         }
 
-        return match validation_errors.is_empty() {
+        match validation_errors.is_empty() {
             true => Ok(()),
             false => Err(validation_errors),
-        };
+        }
     }
 }
 
@@ -91,8 +91,9 @@ fn negative_amount_err() -> impl Fn(String, &'static str, f64) -> ValidationErro
     }
 }
 
+/// `NaN` counts as negative, because it isn't a valid amount either.
 fn is_neg_amount(amount: f64) -> bool {
-    !(amount >= 0.0)
+    amount < 0.0 || amount.is_nan()
 }
 
 /// Rules:

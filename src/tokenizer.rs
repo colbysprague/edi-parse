@@ -98,12 +98,12 @@ impl Delimiters {
             )));
         }
 
-        return Ok(Delimiters {
+        Ok(Delimiters {
             element,
             repetition,
             component,
             segment,
-        });
+        })
     }
 }
 
@@ -155,11 +155,11 @@ impl<'a> RawSegment<'a> {
 
         // if segment is blank
         let out = self.elements[n - 1];
-        if out.eq("") {
+        if out.is_empty() {
             return None;
         }
 
-        return Some(out);
+        Some(out)
     }
 }
 
@@ -187,7 +187,7 @@ pub fn tokenize_with<'a>(
 
     for (idx, segment) in segments.iter().enumerate() {
         let elements: Vec<&str> = segment.split(delims.element).collect();
-        let segment_id = get_valid_segment_id(elements.get(0).unwrap(), idx)?;
+        let segment_id = get_valid_segment_id(elements.first().unwrap(), idx)?;
 
         out.push(RawSegment {
             id: segment_id,
@@ -195,18 +195,18 @@ pub fn tokenize_with<'a>(
         })
     }
 
-    return Ok(out);
+    Ok(out)
 }
 
 fn get_valid_segment_id(segment_id: &str, position: usize) -> Result<&str, EdiError> {
     if !is_valid_segment_id(segment_id) {
         return Err(EdiError::InvalidSegmentId {
             id: segment_id.to_string(),
-            position: position,
+            position,
         });
     }
 
-    return Ok(segment_id);
+    Ok(segment_id)
 }
 
 /// Validates that a given segment id
@@ -223,5 +223,5 @@ fn is_valid_segment_id(id: &str) -> bool {
 /// before `ISA` is skipped, as in [`Delimiters::detect`].
 pub fn tokenize<'a>(input: &'a str) -> Result<Vec<RawSegment<'a>>, EdiError> {
     let delims = &Delimiters::detect(input)?;
-    return tokenize_with(input, delims);
+    tokenize_with(input, delims)
 }

@@ -269,12 +269,11 @@ fn open_claim<'s, 'a>(transactions: &'s mut [Transaction<'a>]) -> Option<&'s mut
 }
 
 fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {
-    let unexpected = |i: usize, expected: &str, found: &str| EdiError::UnexpectedSegment {
+    |i: usize, expected: &str, found: &str| EdiError::UnexpectedSegment {
         position: i,
         expected: expected.to_string(),
         found: found.to_string(),
-    };
-    unexpected
+    }
 }
 
 /// Parse a whole file: `parse_segments` → `check_envelope` → `build_interchange`.
@@ -282,7 +281,7 @@ fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {
 pub fn parse_str<'a>(input: &'a str) -> Result<Interchange<'a>, EdiError> {
     let segments = parse_segments(input)?;
     check_envelope(&segments)?;
-    return build_interchange(segments);
+    build_interchange(segments)
 }
 
 /// Serialize an interchange to JSON (pretty-printed if `pretty`).

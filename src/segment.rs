@@ -395,11 +395,11 @@ impl<'a> Segment<'a> {
             segment_id::BPR => Ok(Segment::Bpr(Bpr::from_segment(&raw)?)),
             segment_id::NM1 => Ok(Segment::Nm1(Nm1::from_segment(&raw)?)),
             segment_id::CLM => Ok(Segment::Clm(Clm::from_segment(&raw)?)),
-            segment_id::SV1 => Ok(Segment::Sv1(Sv1::from_segment(&raw, &delims)?)),
+            segment_id::SV1 => Ok(Segment::Sv1(Sv1::from_segment(&raw, delims)?)),
             segment_id::SV2 => Ok(Segment::Sv2(Sv2::from_segment(&raw, delims)?)),
             segment_id::SV3 => Ok(Segment::Sv3(Sv3::from_segment(&raw, delims)?)),
             segment_id::CLP => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
-            segment_id::SVC => Ok(Segment::Svc(Svc::from_segment(&raw, &delims)?)),
+            segment_id::SVC => Ok(Segment::Svc(Svc::from_segment(&raw, delims)?)),
             segment_id::SE => Ok(Segment::Se(Se::from_segment(&raw)?)),
             segment_id::GE => Ok(Segment::Ge(Ge::from_segment(&raw)?)),
             segment_id::IEA => Ok(Segment::Iea(Iea::from_segment(&raw)?)),
@@ -428,7 +428,7 @@ impl<'a> Segment<'a> {
             Segment::Se(_) => segment_id::SE,
             Segment::Ge(_) => segment_id::GE,
             Segment::Iea(_) => segment_id::IEA,
-            Segment::Unknown { id, .. } => *id,
+            Segment::Unknown { id, .. } => id,
         }
     }
 }

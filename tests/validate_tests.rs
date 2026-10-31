@@ -350,3 +350,18 @@ fn every_sample_is_valid() {
         assert_eq!(ic.validate(), Ok(()), "{name}");
     }
 }
+
+#[test]
+fn nan_amount_is_reported_as_negative() {
+    let mut bad = claim("C1", 10.0, &[10.0]);
+    bad.total_charge = f64::NAN;
+
+    let errors = bad.validate().unwrap_err();
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            ValidationError::NegativeAmount { field, .. } if *field == "total_charge"
+        )),
+        "{errors:?}"
+    );
+}
