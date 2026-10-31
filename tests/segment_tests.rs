@@ -240,6 +240,50 @@ fn procedure_skips_empty_modifier_positions() {
 }
 
 #[test]
+fn sv2_reads_the_revenue_code_procedure_and_charge() {
+    let Segment::Sv2(sv2) = parse("SV2*0305*HC:85025*13.39*UN*1") else {
+        panic!("not SV2")
+    };
+    assert_eq!(sv2.revenue_code, Some("0305"));
+    assert_eq!(sv2.procedure.unwrap().code, "85025");
+    assert_eq!(sv2.charge, 13.39);
+}
+
+#[test]
+fn sv2_without_a_procedure() {
+    let Segment::Sv2(sv2) = parse("SV2*0120**20.00*DA*1") else {
+        panic!("not SV2")
+    };
+    assert_eq!(sv2.procedure, None);
+}
+
+#[test]
+fn sv2_requires_a_charge() {
+    assert!(matches!(
+        parse_err("SV2*0305*HC:85025"),
+        EdiError::MissingElement { index: 3, .. }
+    ));
+}
+
+#[test]
+fn sv3_reads_the_procedure_and_charge() {
+    let Segment::Sv3(sv3) = parse("SV3*AD:D2150*100****1") else {
+        panic!("not SV3")
+    };
+    assert_eq!(sv3.procedure.qualifier, Some("AD"));
+    assert_eq!(sv3.procedure.code, "D2150");
+    assert_eq!(sv3.charge, 100.0);
+}
+
+#[test]
+fn sv3_requires_a_procedure() {
+    assert!(matches!(
+        parse_err("SV3**100"),
+        EdiError::MissingElement { index: 1, .. }
+    ));
+}
+
+#[test]
 fn sv1_bad_units_is_an_error_not_none() {
     match parse_err("SV1*HC:99213*100.00*UN*ONE") {
         EdiError::InvalidNumber {

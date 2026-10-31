@@ -108,14 +108,15 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
 ///   anything else → [`EdiError::UnsupportedTransaction`].
 /// - 837: `NM1*85` sets the current billing provider, `NM1*IL` the current
 ///   subscriber, `NM1*QC` the current patient; each `CLM` starts a claim
-///   carrying copies of all three; `SV1` adds a line to the current claim.
+///   carrying copies of all three; `SV1`, `SV2` or `SV3` adds a line to the
+///   current claim.
 ///   The patient applies to every `CLM` until the next `NM1*QC`, `NM1*IL`, or
 ///   `ST`, so one subscriber's patient never reaches another's claims.
 /// - 835: `BPR02` is the transaction's total payment (0.0 if there is no
 ///   `BPR`); each `CLP` starts a
 ///   remit; the `NM1*QC` after it is its patient; `SVC` adds a line.
-/// - An `SV1`/`SVC` with no open claim/remit, or an `NM1*QC` with no open
-///   transaction or remit → [`EdiError::UnexpectedSegment`].
+/// - An `SV1`/`SV2`/`SV3`/`SVC` with no open claim/remit, or an `NM1*QC` with
+///   no open transaction or remit → [`EdiError::UnexpectedSegment`].
 /// - All other segments (`HL`, `DTM`, `CAS`, other `NM1`s, ...) are ignored.
 pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'a>, EdiError> {
     let mut header = None;
@@ -183,19 +184,32 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                 }
             }
             Segment::Sv1(sv1) => {
-                let unexpected = unexpected();
-
-                let Some(Transaction::Claims(set)) = transactions.last_mut() else {
-                    return Err(unexpected(i, segment_id::CLM, segment_id::SV1));
-                };
-
-                let Some(claim) = set.claims.last_mut() else {
-                    return Err(unexpected(i, segment_id::CLM, segment_id::SV1));
+                let Some(claim) = open_claim(&mut transactions) else {
+                    return Err(unexpected()(i, segment_id::CLM, segment_id::SV1));
                 };
 
                 claim
                     .service_lines
-                    .push(ServiceLine::new(sv1.procedure, sv1.charge, None))
+                    .push(ServiceLine::new(Some(sv1.procedure), sv1.charge, None))
+            }
+            Segment::Sv2(sv2) => {
+                let Some(claim) = open_claim(&mut transactions) else {
+                    return Err(unexpected()(i, segment_id::CLM, segment_id::SV2));
+                };
+
+                claim.service_lines.push(ServiceLine {
+                    revenue_code: sv2.revenue_code,
+                    ..ServiceLine::new(sv2.procedure, sv2.charge, None)
+                })
+            }
+            Segment::Sv3(sv3) => {
+                let Some(claim) = open_claim(&mut transactions) else {
+                    return Err(unexpected()(i, segment_id::CLM, segment_id::SV3));
+                };
+
+                claim
+                    .service_lines
+                    .push(ServiceLine::new(Some(sv3.procedure), sv3.charge, None))
             }
             Segment::Bpr(bpr) => {
                 if let Some(Transaction::Remittance(set)) = transactions.last_mut() {
@@ -227,7 +241,7 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                 };
 
                 remit.service_lines.push(ServiceLine::new(
-                    svc.procedure,
+                    Some(svc.procedure),
                     svc.charge,
                     Some(svc.paid),
                 ))
@@ -244,6 +258,14 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
         control_number: isa.control_number,
         transactions,
     })
+}
+
+/// The claim that a service line belongs to, if there is one.
+fn open_claim<'s, 'a>(transactions: &'s mut [Transaction<'a>]) -> Option<&'s mut Claim<'a>> {
+    match transactions.last_mut() {
+        Some(Transaction::Claims(set)) => set.claims.last_mut(),
+        _ => None,
+    }
 }
 
 fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {

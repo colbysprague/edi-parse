@@ -36,7 +36,8 @@ pub struct Summary {
     pub total_paid: f64,
     /// Number of `ValidationError`s found.
     pub validation_errors: usize,
-    /// How many service lines (837 and 835) used each procedure code.
+    /// How many service lines (837 and 835) used each procedure code. Lines
+    /// with no procedure code aren't counted here.
     /// A `BTreeMap` so the JSON output is in a stable order.
     pub procedure_counts: BTreeMap<String, usize>,
 }
@@ -55,8 +56,8 @@ impl Summary {
         let remit_lines = || remits().flat_map(|rm| &rm.service_lines);
 
         let procedure_counts = claim_lines()
-            .map(|ln| ln.procedure_code)
-            .chain(remit_lines().map(|ln| ln.procedure_code))
+            .chain(remit_lines())
+            .filter_map(|ln| ln.procedure_code)
             .fold(BTreeMap::new(), |mut map, cd| {
                 *map.entry(cd.to_string()).or_default() += 1;
                 map

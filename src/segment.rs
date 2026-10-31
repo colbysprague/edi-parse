@@ -138,7 +138,7 @@ segment_def! {
     }
 }
 
-/// A composite procedure identifier, such as SV101 or SVC01.
+/// A composite procedure identifier, such as SV101, SV202, SV301 or SVC01.
 ///
 /// ```text
 /// HC:K0001:RR:KH:BR                HC:J3490:::::Hep Lock see NDC#
@@ -204,6 +204,46 @@ impl<'a> Sv1<'a> {
             procedure: Procedure::parse(element::<&'a str>(raw, 1)?, delims.component),
             charge: element::<f64>(raw, 2)?,
             units: element::<Option<f64>>(raw, 4)?,
+        })
+    }
+}
+
+/// `SV2`: institutional service line (837I).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sv2<'a> {
+    /// SV201: revenue code.
+    pub revenue_code: Option<&'a str>,
+    /// SV202. Situational: a line can have only a revenue code.
+    pub procedure: Option<Procedure<'a>>,
+    /// SV203: line charge.
+    pub charge: f64,
+}
+
+impl<'a> Sv2<'a> {
+    pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
+        Ok(Sv2 {
+            revenue_code: element::<Option<&'a str>>(raw, 1)?,
+            procedure: element::<Option<&'a str>>(raw, 2)?
+                .map(|value| Procedure::parse(value, delims.component)),
+            charge: element::<f64>(raw, 3)?,
+        })
+    }
+}
+
+/// `SV3`: dental service line (837D).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sv3<'a> {
+    /// SV301.
+    pub procedure: Procedure<'a>,
+    /// SV302: line charge.
+    pub charge: f64,
+}
+
+impl<'a> Sv3<'a> {
+    pub fn from_segment(raw: &RawSegment<'a>, delims: &Delimiters) -> Result<Self, EdiError> {
+        Ok(Sv3 {
+            procedure: Procedure::parse(element::<&'a str>(raw, 1)?, delims.component),
+            charge: element::<f64>(raw, 2)?,
         })
     }
 }
@@ -291,6 +331,8 @@ pub enum Segment<'a> {
     Nm1(Nm1<'a>),
     Clm(Clm<'a>),
     Sv1(Sv1<'a>),
+    Sv2(Sv2<'a>),
+    Sv3(Sv3<'a>),
     Clp(Clp<'a>),
     Svc(Svc<'a>),
     Se(Se<'a>),
@@ -339,7 +381,7 @@ impl<'a> Segment<'a> {
     ///
     /// Takes `raw` by value: for `Unknown` you can move its `elements` Vec in
     /// instead of cloning it. `delims` is needed to split composite elements
-    /// (SV101, SVC01) on `delims.component`.
+    /// (SV101, SV202, SV301, SVC01) on `delims.component`.
     ///
     /// Errors: [`EdiError::MissingElement`] for an absent/empty required
     /// element, [`EdiError::InvalidNumber`] for a non-numeric amount or count.
@@ -354,6 +396,8 @@ impl<'a> Segment<'a> {
             segment_id::NM1 => Ok(Segment::Nm1(Nm1::from_segment(&raw)?)),
             segment_id::CLM => Ok(Segment::Clm(Clm::from_segment(&raw)?)),
             segment_id::SV1 => Ok(Segment::Sv1(Sv1::from_segment(&raw, &delims)?)),
+            segment_id::SV2 => Ok(Segment::Sv2(Sv2::from_segment(&raw, delims)?)),
+            segment_id::SV3 => Ok(Segment::Sv3(Sv3::from_segment(&raw, delims)?)),
             segment_id::CLP => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
             segment_id::SVC => Ok(Segment::Svc(Svc::from_segment(&raw, &delims)?)),
             segment_id::SE => Ok(Segment::Se(Se::from_segment(&raw)?)),
@@ -377,6 +421,8 @@ impl<'a> Segment<'a> {
             Segment::Nm1(_) => segment_id::NM1,
             Segment::Clm(_) => segment_id::CLM,
             Segment::Sv1(_) => segment_id::SV1,
+            Segment::Sv2(_) => segment_id::SV2,
+            Segment::Sv3(_) => segment_id::SV3,
             Segment::Clp(_) => segment_id::CLP,
             Segment::Svc(_) => segment_id::SVC,
             Segment::Se(_) => segment_id::SE,

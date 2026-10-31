@@ -12,7 +12,8 @@ use edi_parse::{
 
 fn line(charge: f64, paid: Option<f64>) -> ServiceLine<'static> {
     ServiceLine {
-        procedure_code: "99213",
+        revenue_code: None,
+        procedure_code: Some("99213"),
         modifiers: Vec::new(),
         description: None,
         charge,

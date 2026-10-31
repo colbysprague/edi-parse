@@ -1,9 +1,9 @@
-//! 837P types: [`Claim`] and the transaction set that holds them.
+//! 837 types: [`Claim`] and the transaction set that holds them.
 
 use super::{Party, ServiceLine};
 use serde::Serialize;
 
-/// An 837P claim: a `CLM` plus its `SV1` lines.
+/// An 837 claim: a `CLM` plus its `SV1`, `SV2` or `SV3` lines.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Claim<'a> {
     /// CLM01.
