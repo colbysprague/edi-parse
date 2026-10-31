@@ -1,5 +1,5 @@
-//! Task 1: `tokenize_with` and `RawSegment::element`.
-//! Delimiters are given explicitly here; detecting them is Task 2.
+//! `tokenize_with` and `RawSegment::element`.
+//! Delimiters are given explicitly here; `delimiter_tests` covers detecting them.
 
 use edi_parse::{tokenize_with, Delimiters, EdiError, RawSegment};
 

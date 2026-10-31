@@ -1,7 +1,7 @@
-//! Task 3: `Segment::from_raw`, `Segment::id`, and the parsing helpers.
+//! `Segment::from_raw`, `Segment::id`, and the parsing helpers.
 //!
-//! Raw segments are built by the test helper `raw` below (not your tokenizer),
-//! so these tests only depend on Task 1's `RawSegment::element`.
+//! Raw segments are built by the test helper `raw` below (not the tokenizer),
+//! so these tests only depend on `RawSegment::element`.
 
 mod common;
 

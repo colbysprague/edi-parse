@@ -1,4 +1,4 @@
-//! Task 6: the `Validate` trait and its impls.
+//! The `Validate` trait and its impls.
 //!
 //! Most tests build structs by hand so they don't depend on the parser.
 

@@ -1,5 +1,5 @@
-//! Task 4 (part): envelope checks (`check_envelope`, `parse_str`).
-//! Task 5: group segments into claims/remits, and serialize them to JSON.
+//! Envelope checks (`check_envelope`, `parse_str`), grouping segments into
+//! claims/remits, and JSON serialization.
 //!
 //! ```text
 //! ISA                       interchange
@@ -10,9 +10,6 @@
 //!   GE
 //! IEA
 //! ```
-//!
-//! For Task 5 you will add `#[derive(Serialize)]` and `#[serde(...)]`
-//! attributes to the types below. They are deliberately left without them.
 
 use crate::error::EdiError;
 use crate::parse_segments;
@@ -100,8 +97,7 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
 
 /// Group a checked segment list into an [`Interchange`].
 ///
-/// Takes the `Vec` by value: iterate it with `into_iter()` and move each
-/// segment's data into the structs you build.
+/// Takes the `Vec` by value, so each segment's data moves into the result.
 ///
 /// Rules:
 /// - `ST01` of `837` → [`Transaction::Claims`]; `835` → [`Transaction::Remittance`];
@@ -277,7 +273,6 @@ fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {
 }
 
 /// Parse a whole file: `parse_segments` → `check_envelope` → `build_interchange`.
-/// Three fallible steps; this should be three lines and three `?`s.
 pub fn parse_str<'a>(input: &'a str) -> Result<Interchange<'a>, EdiError> {
     let segments = parse_segments(input)?;
     check_envelope(&segments)?;

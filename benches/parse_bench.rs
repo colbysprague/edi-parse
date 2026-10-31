@@ -1,4 +1,4 @@
-//! Task 9: benchmarks. Run with `make gen-data N=1000 && make bench`.
+//! Benchmarks. Run with `make gen-data N=1000 && make bench`.
 //!
 //! - `parse_str/*`: single-file parse speed on each sample.
 //! - `process_dir/*`: sequential vs parallel on `data/generated`.

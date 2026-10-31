@@ -1,4 +1,4 @@
-//! Task 6: business-rule validation through a trait.
+//! Business-rule validation through a trait.
 //!
 //! Validation never stops at the first problem: every rule is checked and all
 //! failures are returned together.

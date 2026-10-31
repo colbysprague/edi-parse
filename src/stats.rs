@@ -1,7 +1,4 @@
-//! Task 7: aggregate totals with iterator chains.
-//!
-//! `Summary` already derives `Serialize` so `main.rs` can print it; the serde
-//! work for you is in `transaction.rs` (Task 5).
+//! Aggregate totals with iterator chains.
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -49,9 +46,6 @@ pub struct Summary {
 impl Summary {
     /// Summarize one successfully parsed file (so `files_processed` is 1 and
     /// `files_failed` is 0). Runs validation to fill in `validation_errors`.
-    ///
-    /// Try to write each field as a single iterator chain, without `for` loops
-    /// or `mut` counters.
     pub fn from_interchange(interchange: &Interchange<'_>) -> Summary {
         let errors = interchange.validate().err().unwrap_or_default();
         Summary::with_validation_errors(interchange, &errors)
@@ -124,7 +118,7 @@ impl Summary {
     /// validation error counts per key, concatenate `failed_files` and keep them sorted.
     ///
     /// `Summary::default()` must be an identity: `s.merge(Summary::default()) == s`.
-    /// That plus associativity is what lets rayon `reduce` with it in Task 8.
+    /// That plus associativity is what lets rayon `reduce` with it.
     pub fn merge(self, other: Summary) -> Summary {
         let mut failed_files = [self.failed_files, other.failed_files].concat();
         failed_files.sort();

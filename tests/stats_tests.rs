@@ -1,4 +1,4 @@
-//! Task 7: `Summary` built with iterator chains.
+//! `Summary` built with iterator chains.
 
 mod common;
 

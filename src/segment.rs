@@ -1,5 +1,5 @@
-//! Task 3: turn `RawSegment`s into a typed `Segment` enum.
-//! Task 4 (part): `parse_segments`, the tokenize → typed-segments pipeline.
+//! Turn `RawSegment`s into a typed `Segment` enum, and `parse_segments`, the
+//! tokenize → typed-segments pipeline.
 //!
 //! Element numbers in the docs below are X12 numbers (`CLM02` = `raw.element(2)`).
 
@@ -379,8 +379,8 @@ pub fn element<'a, T: FromElement<'a>>(s: &RawSegment<'a>, index: usize) -> Resu
 impl<'a> Segment<'a> {
     /// Convert one raw segment into a typed segment.
     ///
-    /// Takes `raw` by value: for `Unknown` you can move its `elements` Vec in
-    /// instead of cloning it. `delims` is needed to split composite elements
+    /// Takes `raw` by value, so `Unknown` can keep its `elements` Vec without
+    /// cloning it. `delims` is needed to split composite elements
     /// (SV101, SV202, SV301, SVC01) on `delims.component`.
     ///
     /// Errors: [`EdiError::MissingElement`] for an absent/empty required
@@ -410,8 +410,7 @@ impl<'a> Segment<'a> {
         }
     }
 
-    /// The segment ID (`"CLM"`, `"SE"`, ...). Write this as one exhaustive
-    /// `match` with no `_` arm, so adding a variant forces you to update it.
+    /// The segment ID (`"CLM"`, `"SE"`, ...).
     pub fn id(&self) -> &'a str {
         match self {
             Segment::Isa(_) => segment_id::ISA,

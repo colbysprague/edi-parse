@@ -1,4 +1,4 @@
-//! Task 8: `collect_files`, `process_file`, and `process_dir` with rayon.
+//! `collect_files`, `process_file`, and `process_dir` with rayon.
 
 mod common;
 

@@ -2,7 +2,7 @@
 name = "edi-parse"
 version = "0.1.0"
 edition = "2021"
-description = "Learning project: parse, validate, and summarize X12 835/837P EDI files"
+description = "Parse, validate, and summarize X12 835/837P EDI files"
 publish = false
 
 [dependencies]

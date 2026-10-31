@@ -1,4 +1,4 @@
-//! Task 5: `build_interchange` (grouping segments into claims/remits) and
+//! `build_interchange` (grouping segments into claims/remits) and
 //! `to_json` (serde derive).
 
 mod common;

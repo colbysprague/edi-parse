@@ -10,11 +10,7 @@
 //! ```
 //!
 //! Every parsed type borrows from the input text (`'a`), so parsing a file
-//! never copies element data. See `TASKS.md` for the order to implement things.
-
-// The `todo!()` stubs don't use their parameters yet. Delete this line once
-// every task is done, then make sure `make lint` still passes.
-#![allow(unused_variables)]
+//! never copies element data.
 
 pub mod error;
 pub mod parallel;
