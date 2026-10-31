@@ -107,53 +107,66 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
 /// - `ST01` of `837` → [`Transaction::Claims`]; `835` → [`Transaction::Remittance`];
 ///   anything else → [`EdiError::UnsupportedTransaction`].
 /// - 837: `NM1*85` sets the current billing provider, `NM1*IL` the current
-///   subscriber; each `CLM` starts a claim carrying copies of both; `SV1`
-///   adds a line to the current claim.
+///   subscriber, `NM1*QC` the current patient; each `CLM` starts a claim
+///   carrying copies of all three; `SV1` adds a line to the current claim.
+///   The patient applies to every `CLM` until the next `NM1*QC`, `NM1*IL`, or
+///   `ST`, so one subscriber's patient never reaches another's claims.
 /// - 835: `BPR02` is the transaction's total payment (0.0 if there is no
 ///   `BPR`); each `CLP` starts a
 ///   remit; the `NM1*QC` after it is its patient; `SVC` adds a line.
-/// - An `SV1`/`SVC` with no open claim/remit → [`EdiError::UnexpectedSegment`].
+/// - An `SV1`/`SVC` with no open claim/remit, or an `NM1*QC` with no open
+///   transaction or remit → [`EdiError::UnexpectedSegment`].
 /// - All other segments (`HL`, `DTM`, `CAS`, other `NM1`s, ...) are ignored.
 pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'a>, EdiError> {
     let mut header = None;
     let mut transactions = Vec::new();
     let mut billing_provider = None;
     let mut subscriber = None;
+    let mut patient = None;
 
     for (i, seg) in segments.into_iter().enumerate() {
         match seg {
             Segment::Isa(isa) => header = Some(isa),
-            Segment::St(st) => match st.transaction_set_id {
-                "837" => transactions.push(Transaction::Claims(ClaimSet {
-                    control_number: (st.control_number),
-                    claims: (Vec::new()),
-                })),
-                "835" => transactions.push(Transaction::Remittance(Remittance {
-                    control_number: (st.control_number),
-                    total_payment: (0.0),
-                    remits: (Vec::new()),
-                })),
-                _ => {
-                    return Err(EdiError::UnsupportedTransaction(
-                        st.transaction_set_id.to_string(),
-                    ))
+            Segment::St(st) => {
+                patient = None;
+
+                match st.transaction_set_id {
+                    "837" => transactions.push(Transaction::Claims(ClaimSet {
+                        control_number: (st.control_number),
+                        claims: (Vec::new()),
+                    })),
+                    "835" => transactions.push(Transaction::Remittance(Remittance {
+                        control_number: (st.control_number),
+                        total_payment: (0.0),
+                        remits: (Vec::new()),
+                    })),
+                    _ => {
+                        return Err(EdiError::UnsupportedTransaction(
+                            st.transaction_set_id.to_string(),
+                        ))
+                    }
                 }
-            },
+            }
             Segment::Nm1(nm1) => match nm1.entity_id {
                 "85" => billing_provider = Some(Party::from_nm1(&nm1)?),
-                "IL" => subscriber = Some(Party::from_nm1(&nm1)?),
+                "IL" => {
+                    subscriber = Some(Party::from_nm1(&nm1)?);
+                    patient = None;
+                }
                 "QC" => {
                     let unexpected = unexpected();
 
-                    let Some(Transaction::Remittance(set)) = transactions.last_mut() else {
-                        return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
-                    };
+                    match transactions.last_mut() {
+                        Some(Transaction::Claims(_)) => patient = Some(Party::from_nm1(&nm1)?),
+                        Some(Transaction::Remittance(set)) => {
+                            let Some(remit) = set.remits.last_mut() else {
+                                return Err(unexpected(i, segment_id::CLP, segment_id::NM1));
+                            };
 
-                    let Some(remit) = set.remits.last_mut() else {
-                        return Err(unexpected(i, segment_id::CLP, segment_id::SVC));
-                    };
-
-                    remit.patient = Some(Party::from_nm1(&nm1)?);
+                            remit.patient = Some(Party::from_nm1(&nm1)?);
+                        }
+                        None => return Err(unexpected(i, segment_id::CLP, segment_id::NM1)),
+                    }
                 }
                 _ => {}
             },
@@ -164,6 +177,7 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                         total_charge: (clm.total_charge),
                         billing_provider: billing_provider.clone(),
                         subscriber: subscriber.clone(),
+                        patient: patient.clone(),
                         service_lines: (Vec::new()),
                     })
                 }

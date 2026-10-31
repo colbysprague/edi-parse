@@ -24,6 +24,7 @@ fn claim(id: &'static str, total: f64, lines: &[f64]) -> Claim<'static> {
         total_charge: total,
         billing_provider: None,
         subscriber: None,
+        patient: None,
         service_lines: lines.iter().map(|&c| line(c, None)).collect(),
     }
 }

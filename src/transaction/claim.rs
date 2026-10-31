@@ -16,6 +16,9 @@ pub struct Claim<'a> {
     /// The most recent `NM1*IL` seen before this `CLM`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subscriber: Option<Party<'a>>,
+    /// The `NM1*QC` for this `CLM`, when the patient isn't the subscriber.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient: Option<Party<'a>>,
     pub service_lines: Vec<ServiceLine<'a>>,
 }
 

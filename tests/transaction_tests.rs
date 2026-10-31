@@ -154,7 +154,133 @@ fn pipe_delimited_837() {
     );
 }
 
+fn patient_last_names<'a>(set: &'a edi_parse::ClaimSet<'a>) -> Vec<Option<&'a str>> {
+    set.claims
+        .iter()
+        .map(|c| c.patient.as_ref().and_then(|p| p.last_name))
+        .collect()
+}
+
+#[test]
+fn patient_in_837_is_kept_on_the_claim() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "NM1*85*2*CLINIC*****XX*1234567893",
+            "HL*2*1*22*1",
+            "NM1*IL*1*DOE*JOHN****MI*MEMBER001",
+            "HL*3*2*23*0",
+            "PAT*19",
+            "NM1*QC*1*DOE*JANE",
+            "CLM*A1*10.00",
+            "SV1*HC:99211*10.00",
+            "SE*10*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let claim = &claims(&ic).claims[0];
+    assert_eq!(
+        claim.patient,
+        Some(Party {
+            last_name: Some("DOE"),
+            first_name: Some("JANE"),
+            organization_name: None,
+            id: None,
+        })
+    );
+    assert_eq!(claim.subscriber.as_ref().unwrap().first_name, Some("JOHN"));
+
+    let v: Value = serde_json::from_str(&to_json(&ic, false).unwrap()).unwrap();
+    assert_eq!(
+        v["transactions"][0]["claims"][0]["patient"],
+        json!({ "last_name": "DOE", "first_name": "JANE" })
+    );
+}
+
+#[test]
+fn claim_without_a_patient_omits_the_key() {
+    let v = json_of(S_837_MULTI);
+    let claim = v["transactions"][0]["claims"][0].as_object().unwrap();
+    assert!(!claim.contains_key("patient"));
+}
+
+#[test]
+fn patient_applies_to_each_of_their_claims() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "NM1*IL*1*DOE*JOHN",
+            "NM1*QC*1*DOE*JANE",
+            "CLM*A1*10.00",
+            "CLM*A2*20.00",
+            "NM1*QC*1*POE*JIM",
+            "CLM*A3*30.00",
+            "SE*8*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        patient_last_names(claims(&ic)),
+        [Some("DOE"), Some("DOE"), Some("POE")]
+    );
+}
+
+#[test]
+fn patient_does_not_carry_to_the_next_subscriber() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "NM1*IL*1*DOE*JOHN",
+            "NM1*QC*1*DOE*JANE",
+            "CLM*A1*10.00",
+            "NM1*IL*1*ROE*RICHARD",
+            "CLM*A2*20.00",
+            "SE*7*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(patient_last_names(claims(&ic)), [Some("DOE"), None]);
+}
+
+#[test]
+fn patient_does_not_carry_to_the_next_transaction() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "NM1*QC*1*DOE*JANE",
+            "CLM*A1*10.00",
+            "SE*4*0001",
+            "ST*837*0002",
+            "CLM*B1*20.00",
+            "SE*3*0002",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let Transaction::Claims(second) = &ic.transactions[1] else {
+        panic!("not claims")
+    };
+    assert_eq!(second.claims[0].patient, None);
+}
+
 // ---- 835 --------------------------------------------------------------------
+
+#[test]
+fn patient_before_any_clp_in_835_names_nm1() {
+    let input = envelope(
+        "HP",
+        &["ST*835*0001", "BPR*I*0", "NM1*QC*1*DOE*JANE", "SE*4*0001"],
+    );
+    match parse_str(&input) {
+        Err(EdiError::UnexpectedSegment {
+            expected, found, ..
+        }) => assert_eq!((expected.as_str(), found.as_str()), ("CLP", "NM1")),
+        other => panic!("got {other:?}"),
+    }
+}
 
 #[test]
 fn groups_835_into_remits() {
