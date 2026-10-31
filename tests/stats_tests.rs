@@ -170,6 +170,66 @@ fn merge_adds_everything() {
 }
 
 #[test]
+fn from_interchange_breaks_down_validation_errors() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CLM*A1*20.00",
+            "SV1*HC:99213*10.00",
+            "CLM*B1*20.00",
+            "SV1*HC:99213*10.00",
+            "CLM*C1*20.00",
+            "SE*7*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let s = Summary::from_interchange(&ic);
+    assert_eq!(s.validation_errors, 3);
+    assert_eq!(
+        s.validation_error_counts,
+        counts(&[("charge_mismatch", 2), ("no_service_lines", 1)])
+    );
+    assert_eq!(s.files_with_validation_errors, 1);
+}
+
+#[test]
+fn valid_file_has_no_validation_error_counts() {
+    let s = summarize(S_837_MULTI);
+    assert!(s.validation_error_counts.is_empty());
+    assert_eq!(s.files_with_validation_errors, 0);
+}
+
+#[test]
+fn merge_adds_validation_error_counts() {
+    let a = Summary {
+        validation_errors: 3,
+        validation_error_counts: counts(&[("charge_mismatch", 2), ("no_service_lines", 1)]),
+        files_with_validation_errors: 1,
+        ..Summary::default()
+    };
+    let b = Summary {
+        validation_errors: 2,
+        validation_error_counts: counts(&[("charge_mismatch", 1), ("unknown_status", 1)]),
+        files_with_validation_errors: 1,
+        ..Summary::default()
+    };
+
+    let m = a.merge(b);
+    assert_eq!(m.validation_errors, 5);
+    assert_eq!(
+        m.validation_error_counts,
+        counts(&[
+            ("charge_mismatch", 3),
+            ("no_service_lines", 1),
+            ("unknown_status", 1)
+        ])
+    );
+    assert_eq!(m.files_with_validation_errors, 2);
+    assert_eq!(m.clone().merge(Summary::default()), m);
+}
+
+#[test]
 fn merge_keeps_failed_files_sorted() {
     let z = Summary::failure(&in_file("z.edi", EdiError::MissingIea));
     let a = Summary::failure(&in_file("a.edi", EdiError::MissingIsa));

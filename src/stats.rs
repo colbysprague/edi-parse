@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::error::EdiError;
+use crate::error::{EdiError, ValidationError};
 use crate::transaction::Interchange;
 use crate::validate::Validate;
 use crate::Transaction;
@@ -28,7 +28,7 @@ pub struct Summary {
     pub claims: usize,
     /// 835 claim payments (`CLP`).
     pub remits: usize,
-    /// Service lines of both kinds (`SV1` + `SVC`).
+    /// Service lines of every kind (`SV1`, `SV2`, `SV3` and `SVC`).
     pub service_lines: usize,
     /// Sum of 837 claim `total_charge` (CLM02).
     pub total_billed: f64,
@@ -36,6 +36,10 @@ pub struct Summary {
     pub total_paid: f64,
     /// Number of `ValidationError`s found.
     pub validation_errors: usize,
+    /// `validation_errors` broken down by [`ValidationError::kind`].
+    pub validation_error_counts: BTreeMap<String, usize>,
+    /// Files with at least one `ValidationError`.
+    pub files_with_validation_errors: usize,
     /// How many service lines (837 and 835) used each procedure code. Lines
     /// with no procedure code aren't counted here.
     /// A `BTreeMap` so the JSON output is in a stable order.
@@ -49,6 +53,16 @@ impl Summary {
     /// Try to write each field as a single iterator chain, without `for` loops
     /// or `mut` counters.
     pub fn from_interchange(interchange: &Interchange<'_>) -> Summary {
+        let errors = interchange.validate().err().unwrap_or_default();
+        Summary::with_validation_errors(interchange, &errors)
+    }
+
+    /// [`Summary::from_interchange`], for a caller that already has `errors`
+    /// from validating `interchange`.
+    pub fn with_validation_errors(
+        interchange: &Interchange<'_>,
+        errors: &[ValidationError],
+    ) -> Summary {
         let txns = || interchange.transactions.iter();
         let claims = || txns().flat_map(Transaction::claims);
         let claim_lines = || claims().flat_map(|clm| &clm.service_lines);
@@ -63,6 +77,11 @@ impl Summary {
                 map
             });
 
+        let validation_error_counts = errors.iter().fold(BTreeMap::new(), |mut map, error| {
+            *map.entry(error.kind().to_string()).or_default() += 1;
+            map
+        });
+
         Summary {
             files_processed: (1),
             files_failed: (0),
@@ -73,7 +92,9 @@ impl Summary {
             service_lines: (claim_lines().count() + remit_lines().count()),
             total_billed: (claims().map(|clm| clm.total_charge).sum()),
             total_paid: (remits().map(|rm| rm.paid).sum()),
-            validation_errors: interchange.validate().err().map_or(0, |errs| errs.len()),
+            validation_errors: errors.len(),
+            validation_error_counts: (validation_error_counts),
+            files_with_validation_errors: usize::from(!errors.is_empty()),
             procedure_counts: (procedure_counts),
         }
     }
@@ -93,23 +114,20 @@ impl Summary {
             total_billed: (0.0),
             total_paid: (0.0),
             validation_errors: (0),
+            validation_error_counts: (BTreeMap::new()),
+            files_with_validation_errors: (0),
             procedure_counts: (BTreeMap::new()),
         }
     }
 
-    /// Combine two summaries: add every count and total, add procedure counts
-    /// per code, concatenate `failed_files` and keep them sorted.
+    /// Combine two summaries: add every count and total, add procedure and
+    /// validation error counts per key, concatenate `failed_files` and keep them sorted.
     ///
     /// `Summary::default()` must be an identity: `s.merge(Summary::default()) == s`.
     /// That plus associativity is what lets rayon `reduce` with it in Task 8.
     pub fn merge(self, other: Summary) -> Summary {
         let mut failed_files = [self.failed_files, other.failed_files].concat();
         failed_files.sort();
-
-        let mut procedure_counts = self.procedure_counts;
-        for (code, count) in other.procedure_counts {
-            *procedure_counts.entry(code).or_default() += count;
-        }
 
         Summary {
             files_processed: self.files_processed + other.files_processed,
@@ -122,7 +140,13 @@ impl Summary {
             total_billed: self.total_billed + other.total_billed,
             total_paid: self.total_paid + other.total_paid,
             validation_errors: self.validation_errors + other.validation_errors,
-            procedure_counts,
+            validation_error_counts: add_counts(
+                self.validation_error_counts,
+                other.validation_error_counts,
+            ),
+            files_with_validation_errors: self.files_with_validation_errors
+                + other.files_with_validation_errors,
+            procedure_counts: add_counts(self.procedure_counts, other.procedure_counts),
         }
     }
 
@@ -140,4 +164,15 @@ impl Summary {
 
         counts
     }
+}
+
+fn add_counts(
+    mut totals: BTreeMap<String, usize>,
+    counts: BTreeMap<String, usize>,
+) -> BTreeMap<String, usize> {
+    for (key, count) in counts {
+        *totals.entry(key).or_default() += count;
+    }
+
+    totals
 }
