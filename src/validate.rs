@@ -132,9 +132,28 @@ impl Validate for Remit<'_> {
             ));
         }
 
-        let serv_line_total: f64 = self.service_lines.iter().map(|line| self.paid).sum();
+        if !self.service_lines.is_empty() {
+            let line_charge: f64 = self.service_lines.iter().map(|l| l.charge).sum();
+            let line_paid: f64 = self.service_lines.iter().filter_map(|l| l.paid).sum();
 
-        todo!()
+            if (self.total_charge - line_charge).abs() > AMOUNT_TOLERANCE {
+                validation_errors.push(ValidationError::ChargeMismatch {
+                    claim_id: self.claim_id.to_string(),
+                    declared: self.total_charge,
+                    computed: line_charge,
+                });
+            }
+
+            if (self.paid - line_paid).abs() > AMOUNT_TOLERANCE {
+                validation_errors.push(ValidationError::PaymentMismatch {
+                    claim_id: self.claim_id.to_string(),
+                    declared: self.paid,
+                    computed: line_paid,
+                });
+            }
+        }
+
+        into_result(validation_errors)
     }
 }
 
@@ -142,26 +161,54 @@ impl Validate for Remit<'_> {
 /// isn't the sum of the remits' `paid`.
 impl Validate for Remittance<'_> {
     fn validate(&self) -> Result<(), Vec<ValidationError>> {
-        todo!("Task 6")
+        let mut errors = validate_all(&self.remits).err().unwrap_or_default();
+
+        let paid_total: f64 = self.remits.iter().map(|r| r.paid).sum();
+        if (self.total_payment - paid_total).abs() > AMOUNT_TOLERANCE {
+            errors.push(ValidationError::RemittanceTotalMismatch {
+                declared: self.total_payment,
+                computed: paid_total,
+            });
+        }
+
+        into_result(errors)
     }
 }
 
 /// Delegate to the claims (via [`validate_all`]) or the remittance.
 impl Validate for Transaction<'_> {
     fn validate(&self) -> Result<(), Vec<ValidationError>> {
-        todo!("Task 6")
+        match self {
+            Transaction::Claims(set) => validate_all(&set.claims),
+            Transaction::Remittance(r) => r.validate(),
+        }
     }
 }
 
 /// Every transaction's errors, concatenated in order.
 impl Validate for Interchange<'_> {
     fn validate(&self) -> Result<(), Vec<ValidationError>> {
-        todo!("Task 6")
+        validate_all(&self.transactions)
     }
 }
 
 /// Validate a slice of anything `Validate`, concatenating all errors.
 /// Generic, so it works for `&[Claim]`, `&[Remit]`, `&[Transaction]`, ...
 pub fn validate_all<T: Validate>(items: &[T]) -> Result<(), Vec<ValidationError>> {
-    todo!("Task 6: generic over the trait")
+    let errors: Vec<ValidationError> = items
+        .iter()
+        .filter_map(|item| item.validate().err())
+        .flatten()
+        .collect();
+
+    into_result(errors)
+}
+
+/// Empty list → `Ok`, otherwise `Err` with the list.
+fn into_result(errors: Vec<ValidationError>) -> Result<(), Vec<ValidationError>> {
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
