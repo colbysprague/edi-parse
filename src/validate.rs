@@ -54,25 +54,21 @@ impl Validate for Claim<'_> {
             })
         }
 
-        let serv_line_total: f64 = self
-            .service_lines
-            .iter()
-            .filter_map(|line| {
-                if is_neg_amount(line.charge) {
-                    validation_errors.push(negative_amount_err(
-                        self.claim_id.to_string(),
-                        "line_charge",
-                        line.charge,
-                    ));
-                    None
-                } else {
-                    Some(line.charge)
-                }
-            })
-            .sum();
+        for line in &self.service_lines {
+            if is_neg_amount(line.charge) {
+                validation_errors.push(negative_amount_err(
+                    self.claim_id.to_string(),
+                    "line_charge",
+                    line.charge,
+                ));
+            }
+        }
 
-        let diff = self.total_charge - (&serv_line_total);
-        if diff > AMOUNT_TOLERANCE {
+        let serv_line_total: f64 = self.service_lines.iter().map(|l| l.charge).sum();
+
+        if !self.service_lines.is_empty()
+            && (self.total_charge - serv_line_total).abs() > AMOUNT_TOLERANCE
+        {
             validation_errors.push(ValidationError::ChargeMismatch {
                 claim_id: (self.claim_id.to_string()),
                 declared: (self.total_charge),

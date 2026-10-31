@@ -78,6 +78,32 @@ fn claim_charge_mismatch() {
 }
 
 #[test]
+fn claim_total_below_line_sum_is_a_mismatch() {
+    let errs = errors(&claim("C1", 100.0, &[100.0, 50.0]));
+    assert_eq!(
+        errs,
+        vec![ValidationError::ChargeMismatch {
+            claim_id: "C1".into(),
+            declared: 100.0,
+            computed: 150.0,
+        }]
+    );
+}
+
+#[test]
+fn claim_negative_line_counts_toward_the_sum() {
+    let errs = errors(&claim("C1", 40.0, &[50.0, -10.0]));
+    assert_eq!(
+        errs,
+        vec![ValidationError::NegativeAmount {
+            claim_id: "C1".into(),
+            field: "line_charge",
+            value: -10.0,
+        }]
+    );
+}
+
+#[test]
 fn claim_amounts_use_a_tolerance() {
     // 0.1 + 0.2 != 0.3 in floating point; validation must not care.
     assert_eq!(claim("C1", 0.3, &[0.1, 0.2]).validate(), Ok(()));

@@ -3,7 +3,9 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
-use edi_parse::{parse_dir, parse_str, parse_to_file, process_dir, to_json, EdiError, Validate};
+use edi_parse::{
+    parse_dir, parse_str, parse_to_file, process_dir, to_json, write_summary, EdiError, Validate,
+};
 
 /// Parse, validate, and summarize X12 835/837P EDI files.
 #[derive(Debug, Parser)]
@@ -37,6 +39,9 @@ enum Command {
         /// How many top procedure codes to print to stderr.
         #[arg(long, default_value_t = 5)]
         top: usize,
+        /// Write summary.json to this directory instead of printing to stdout.
+        #[arg(long, short)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -49,7 +54,8 @@ fn main() -> ExitCode {
             dir,
             sequential,
             top,
-        } => cmd_summary(&dir, !sequential, top),
+            out,
+        } => cmd_summary(&dir, !sequential, top, out.as_deref()),
     };
     match result {
         Ok(code) => code,
@@ -94,6 +100,7 @@ fn cmd_parse_dir(
     pretty: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let report = parse_dir(dir, out, pretty)?;
+    let summary_path = write_summary(&report.summary, out)?;
     for failure in &report.failed {
         eprintln!("error: {failure}");
     }
@@ -103,6 +110,7 @@ fn cmd_parse_dir(
         report.failed.len(),
         out.display(),
     );
+    eprintln!("summary written to {}", summary_path.display());
     if report.failed.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -132,12 +140,19 @@ fn cmd_summary(
     dir: &Path,
     parallel: bool,
     top: usize,
+    out: Option<&Path>,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let start = Instant::now();
     let summary = process_dir(dir, parallel)?;
     let elapsed = start.elapsed();
 
-    println!("{}", serde_json::to_string_pretty(&summary)?);
+    match out {
+        Some(out) => {
+            let dest = write_summary(&summary, out)?;
+            eprintln!("summary written to {}", dest.display());
+        }
+        None => println!("{}", serde_json::to_string_pretty(&summary)?),
+    }
 
     eprintln!(
         "{} files ok, {} failed in {:.2?} ({})",

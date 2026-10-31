@@ -5,7 +5,9 @@ mod common;
 use std::path::Path;
 
 use common::*;
-use edi_parse::{collect_files, parse_dir, process_dir, process_file, EdiError, Summary};
+use edi_parse::{
+    collect_files, parse_dir, process_dir, process_file, write_summary, EdiError, Summary,
+};
 
 /// Parallel float sums can differ from sequential ones in the last bits,
 /// so compare totals approximately and everything else exactly.
@@ -201,6 +203,32 @@ fn parse_dir_mirrors_layout_and_continues_past_failures() {
     assert!(out.join("nested").join("ok.json").is_file());
     assert!(!out.join("bad.json").exists());
     assert!(!out.join("notes.json").exists());
+}
+
+#[test]
+fn parse_dir_summary_covers_nested_and_failed_files() {
+    let dir = temp_dir("parse-dir-summary-in");
+    let out = temp_dir("parse-dir-summary-out");
+    std::fs::create_dir(dir.join("nested")).unwrap();
+    std::fs::copy(
+        samples_dir().join("835_multi_clp.edi"),
+        dir.join("nested").join("ok.edi"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("bad.edi"), "x").unwrap();
+
+    let report = parse_dir(&dir, &out, false).unwrap();
+    let path = write_summary(&report.summary, &out).unwrap();
+
+    assert_eq!(path, out.join("summary.json"));
+    assert_eq!(report.summary.files_processed, 1);
+    assert_eq!(report.summary.files_failed, 1);
+    assert!(report.summary.remits > 0);
+
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(written["files_processed"], 1);
+    assert_eq!(written["files_failed"], 1);
 }
 
 #[test]

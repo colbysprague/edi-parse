@@ -63,14 +63,17 @@ pub struct ParseDirReport {
     pub written: usize,
     /// One `path: error` message per file that failed, sorted by path.
     pub failed: Vec<String>,
+    /// Totals across every file, merged.
+    pub summary: Summary,
 }
 
-/// Parse `src` and write it as JSON to `dest`, creating parent directories.
+/// Parse `src`, write it as JSON to `dest` (creating parent directories), and
+/// return its [`Summary`].
 pub fn parse_to_file(
     src: &Path,
     dest: &Path,
     pretty: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Summary, Box<dyn std::error::Error>> {
     let contents = fs::read_to_string(src)?;
     let interchange = parse_str(&contents)?;
     let json = to_json(&interchange, pretty)?;
@@ -79,7 +82,17 @@ pub fn parse_to_file(
         fs::create_dir_all(parent)?;
     }
     fs::write(dest, json + "\n")?;
-    Ok(())
+    Ok(Summary::from_interchange(&interchange))
+}
+
+/// Write `summary` as pretty JSON to `<out>/summary.json`, creating `out` if
+/// needed, and return the path written.
+pub fn write_summary(summary: &Summary, out: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let json = serde_json::to_string_pretty(summary)?;
+    fs::create_dir_all(out)?;
+    let dest = out.join("summary.json");
+    fs::write(&dest, json + "\n")?;
+    Ok(dest)
 }
 
 /// Parse every file under `dir` (recursively, in parallel) and write each one
@@ -90,20 +103,23 @@ pub fn parse_to_file(
 pub fn parse_dir(dir: &Path, out: &Path, pretty: bool) -> Result<ParseDirReport, EdiError> {
     let files = collect_files_recursive(dir)?;
 
-    let failed: Vec<String> = files
+    let summary = files
         .par_iter()
-        .filter_map(|src| {
+        .map(|src| {
             let relative = src.strip_prefix(dir).unwrap_or(src);
             let dest = out.join(relative).with_extension("json");
-            parse_to_file(src, &dest, pretty)
-                .err()
-                .map(|e| format!("{}: {e}", src.display()))
+            parse_to_file(src, &dest, pretty).unwrap_or_else(|e| Summary {
+                files_failed: 1,
+                failed_files: vec![format!("{}: {e}", src.display())],
+                ..Summary::default()
+            })
         })
-        .collect();
+        .reduce(Summary::default, Summary::merge);
 
     Ok(ParseDirReport {
-        written: files.len() - failed.len(),
-        failed,
+        written: summary.files_processed,
+        failed: summary.failed_files.clone(),
+        summary,
     })
 }
 
