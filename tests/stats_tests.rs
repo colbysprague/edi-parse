@@ -78,6 +78,30 @@ fn procedure_counts_ignore_modifiers_and_descriptions() {
 }
 
 #[test]
+fn summary_includes_institutional_and_dental_lines() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CLM*A1*30.00",
+            "SV2*0305*HC:85025*10.00*UN*1",
+            "SV2*0120**20.00*DA*1",
+            "CLM*B1*40.00",
+            "SV3*AD:D1110*40.00****1",
+            "SE*7*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let summary = Summary::from_interchange(&ic);
+    assert_eq!(summary.service_lines, 3);
+    assert_eq!(summary.validation_errors, 0);
+    assert_eq!(
+        summary.procedure_counts,
+        counts(&[("85025", 1), ("D1110", 1)])
+    );
+}
+
+#[test]
 fn summary_counts_validation_errors() {
     let bad = |id| Claim {
         claim_id: id,
@@ -86,7 +110,8 @@ fn summary_counts_validation_errors() {
         subscriber: None,
         patient: None,
         service_lines: vec![ServiceLine {
-            procedure_code: "99213",
+            revenue_code: None,
+            procedure_code: Some("99213"),
             modifiers: Vec::new(),
             description: None,
             charge: 1.0,
