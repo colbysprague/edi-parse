@@ -13,6 +13,8 @@ SCALE_DIR := data/scale
 BUDGET  ?= 2
 MAX_N   ?= 256000
 LOAD_DIR  := data/load
+EXAMPLES_DIR ?= examples/x12
+EXAMPLES_OUT ?= examples/output/x12
 
 # $(call TIME_ALL,dir): time the three implementations on dir with warm-up runs.
 TIME_ALL = $(PYTHON) scripts/bench.py --runs $(RUNS) \
@@ -20,7 +22,7 @@ TIME_ALL = $(PYTHON) scripts/bench.py --runs $(RUNS) \
 	--cmd rust-seq "$(BIN) summary --sequential $(1)" \
 	--cmd rust-par "$(BIN) summary $(1)"
 
-.PHONY: help build release run test test-one fmt lint gen-data bench baseline scaling load clean
+.PHONY: help build release run examples test test-one fmt lint gen-data bench baseline scaling load clean
 
 help: ## List all targets
 	@echo "usage: make <target>"
@@ -36,6 +38,11 @@ release: ## Optimized build
 
 run: ## Summarize data/samples (debug build)
 	$(CARGO) run -- summary data/samples
+
+examples: release ## Parse every file in examples/x12 into examples/output/x12
+	@if [ ! -d $(EXAMPLES_DIR) ]; then echo "no $(EXAMPLES_DIR); set EXAMPLES_DIR=<path to .edi files>"; exit 1; fi
+	rm -rf $(EXAMPLES_OUT)
+	$(BIN) parse $(EXAMPLES_DIR) --out $(EXAMPLES_OUT) --pretty
 
 test: ## Run every test (all files, even after failures)
 	$(CARGO) test --no-fail-fast
