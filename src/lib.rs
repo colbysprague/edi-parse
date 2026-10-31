@@ -26,7 +26,10 @@ pub mod transaction;
 pub mod validate;
 
 pub use error::{EdiError, ValidationError};
-pub use parallel::{collect_files, process_dir, process_file};
+pub use parallel::{
+    collect_files, collect_files_recursive, parse_dir, parse_to_file, process_dir, process_file,
+    ParseDirReport,
+};
 pub use segment::{parse_segments, Segment};
 pub use stats::Summary;
 pub use tokenizer::{tokenize, tokenize_with, Delimiters, RawSegment};

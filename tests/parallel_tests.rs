@@ -5,7 +5,7 @@ mod common;
 use std::path::Path;
 
 use common::*;
-use edi_parse::{collect_files, process_dir, process_file, EdiError, Summary};
+use edi_parse::{collect_files, parse_dir, process_dir, process_file, EdiError, Summary};
 
 /// Parallel float sums can differ from sequential ones in the last bits,
 /// so compare totals approximately and everything else exactly.
@@ -176,6 +176,38 @@ fn empty_directory() {
 fn process_dir_on_missing_dir() {
     assert!(matches!(
         process_dir(Path::new("/definitely/not/a/real/dir"), true),
+        Err(EdiError::Io { .. })
+    ));
+}
+
+#[test]
+fn parse_dir_mirrors_layout_and_continues_past_failures() {
+    let dir = temp_dir("parse-dir-in");
+    let out = temp_dir("parse-dir-out");
+    std::fs::create_dir(dir.join("nested")).unwrap();
+    std::fs::copy(
+        samples_dir().join("835_multi_clp.edi"),
+        dir.join("nested").join("ok.edi"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("bad.edi"), "x").unwrap();
+    std::fs::write(dir.join("notes.txt"), "x").unwrap();
+
+    let report = parse_dir(&dir, &out, false).unwrap();
+
+    assert_eq!(report.written, 1);
+    assert_eq!(report.failed.len(), 1);
+    assert!(report.failed[0].contains("bad.edi"), "{:?}", report.failed);
+    assert!(out.join("nested").join("ok.json").is_file());
+    assert!(!out.join("bad.json").exists());
+    assert!(!out.join("notes.json").exists());
+}
+
+#[test]
+fn parse_dir_on_missing_dir() {
+    let out = temp_dir("parse-dir-missing");
+    assert!(matches!(
+        parse_dir(Path::new("/definitely/not/a/real/dir"), &out, false),
         Err(EdiError::Io { .. })
     ));
 }

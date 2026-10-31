@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
-use edi_parse::{parse_str, process_dir, to_json, EdiError, Validate};
+use edi_parse::{parse_dir, parse_str, parse_to_file, process_dir, to_json, EdiError, Validate};
 
 /// Parse, validate, and summarize X12 835/837P EDI files.
 #[derive(Debug, Parser)]
@@ -15,12 +15,16 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Parse one file and print it as JSON.
+    /// Parse a file and print it as JSON, or a directory (recursively) into --out.
     Parse {
-        file: PathBuf,
+        path: PathBuf,
         /// Pretty-print the JSON.
         #[arg(long)]
         pretty: bool,
+        /// Write .json files to this directory, mirroring the input layout.
+        /// Required when PATH is a directory.
+        #[arg(long, short)]
+        out: Option<PathBuf>,
     },
     /// Parse one file and report validation errors (exit code 1 if any).
     Validate { file: PathBuf },
@@ -39,7 +43,7 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Parse { file, pretty } => cmd_parse(&file, pretty),
+        Command::Parse { path, pretty, out } => cmd_parse(&path, out.as_deref(), pretty),
         Command::Validate { file } => cmd_validate(&file),
         Command::Summary {
             dir,
@@ -63,11 +67,47 @@ fn read(path: &Path) -> Result<String, EdiError> {
     })
 }
 
-fn cmd_parse(file: &Path, pretty: bool) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let input = read(file)?;
+fn cmd_parse(
+    path: &Path,
+    out: Option<&Path>,
+    pretty: bool,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    if path.is_dir() {
+        let out = out.ok_or("--out is required when parsing a directory")?;
+        return cmd_parse_dir(path, out, pretty);
+    }
+    if let Some(out) = out {
+        let name = path.file_name().ok_or("input path has no file name")?;
+        parse_to_file(path, &out.join(name).with_extension("json"), pretty)?;
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let input = read(path)?;
     let interchange = parse_str(&input)?;
     println!("{}", to_json(&interchange, pretty)?);
     Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_parse_dir(
+    dir: &Path,
+    out: &Path,
+    pretty: bool,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let report = parse_dir(dir, out, pretty)?;
+    for failure in &report.failed {
+        eprintln!("error: {failure}");
+    }
+    eprintln!(
+        "{} files ok, {} failed; JSON written to {}",
+        report.written,
+        report.failed.len(),
+        out.display(),
+    );
+    if report.failed.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::FAILURE)
+    }
 }
 
 fn cmd_validate(file: &Path) -> Result<ExitCode, Box<dyn std::error::Error>> {
