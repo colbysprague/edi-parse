@@ -63,6 +63,7 @@ fn summary_counts_validation_errors() {
         total_charge: 10.0,
         billing_provider: None,
         subscriber: None,
+        patient: None,
         service_lines: vec![ServiceLine {
             procedure_code: "99213",
             charge: 1.0,
