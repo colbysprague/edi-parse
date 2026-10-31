@@ -90,7 +90,7 @@ fn nm1_person() {
         Segment::Nm1(Nm1 {
             entity_id: "IL",
             entity_type: "1",
-            last_name: "DOE",
+            last_name: Some("DOE"),
             first_name: Some("JANE"),
             id_qualifier: Some("MI"),
             id: Some("MEMBER001"),
@@ -105,7 +105,7 @@ fn nm1_organization_has_no_first_name() {
         Segment::Nm1(Nm1 {
             entity_id: "85",
             entity_type: "2",
-            last_name: "EXAMPLE CLINIC",
+            last_name: Some("EXAMPLE CLINIC"),
             first_name: None,
             id_qualifier: Some("XX"),
             id: Some("1234567893"),
@@ -119,6 +119,21 @@ fn nm1_without_id() {
         panic!("not NM1")
     };
     assert_eq!((nm1.id_qualifier, nm1.id), (None, None));
+}
+
+#[test]
+fn nm1_without_name() {
+    assert_eq!(
+        parse("NM1*87*2"),
+        Segment::Nm1(Nm1 {
+            entity_id: "87",
+            entity_type: "2",
+            last_name: None,
+            first_name: None,
+            id_qualifier: None,
+            id: None,
+        })
+    );
 }
 
 #[test]

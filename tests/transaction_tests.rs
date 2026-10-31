@@ -70,7 +70,7 @@ fn groups_837_into_claims() {
 fn each_claim_gets_its_own_subscriber() {
     let input = sample(S_837_MULTI);
     let ic = parse_str(&input).unwrap();
-    let names: Vec<(&str, Option<&str>)> = claims(&ic)
+    let names: Vec<(Option<&str>, Option<&str>)> = claims(&ic)
         .claims
         .iter()
         .map(|c| {
@@ -81,9 +81,9 @@ fn each_claim_gets_its_own_subscriber() {
     assert_eq!(
         names,
         [
-            ("DOE", Some("JANE")),
-            ("ROE", Some("RICHARD")),
-            ("SMITH", Some("ALEX"))
+            (Some("DOE"), Some("JANE")),
+            (Some("ROE"), Some("RICHARD")),
+            (Some("SMITH"), Some("ALEX"))
         ]
     );
     assert_eq!(
@@ -97,7 +97,7 @@ fn billing_provider_carries_to_every_claim() {
     let input = sample(S_837_MULTI);
     let ic = parse_str(&input).unwrap();
     let expected = Party {
-        last_name: "EXAMPLE CLINIC",
+        last_name: Some("EXAMPLE CLINIC"),
         first_name: None,
         id: Some("1234567893"),
     };
@@ -120,9 +120,12 @@ fn submitter_and_receiver_nm1_are_not_parties() {
     let first = &claims(&ic).claims[0];
     assert_ne!(
         first.billing_provider.as_ref().unwrap().last_name,
-        "FAKE CLEARINGHOUSE"
+        Some("FAKE CLEARINGHOUSE")
     );
-    assert_ne!(first.subscriber.as_ref().unwrap().last_name, "FAKE PAYER");
+    assert_ne!(
+        first.subscriber.as_ref().unwrap().last_name,
+        Some("FAKE PAYER")
+    );
 }
 
 #[test]
@@ -142,7 +145,7 @@ fn pipe_delimited_837() {
     assert_eq!(codes, ["36415", "85025"]);
     assert_eq!(
         set.claims[0].billing_provider.as_ref().unwrap().last_name,
-        "SAMPLE MEDICAL GROUP"
+        Some("SAMPLE MEDICAL GROUP")
     );
 }
 
@@ -166,7 +169,7 @@ fn groups_835_into_remits() {
     assert_eq!(
         first.patient,
         Some(Party {
-            last_name: "DOE",
+            last_name: Some("DOE"),
             first_name: Some("JANE"),
             id: Some("MEMBER001")
         })
@@ -249,7 +252,30 @@ fn multiple_transactions_in_one_interchange() {
             .as_ref()
             .unwrap()
             .last_name,
-        "CLINIC B"
+        Some("CLINIC B")
+    );
+}
+
+#[test]
+fn nm1_with_blank_name_does_not_fail_the_file() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "NM1*87*2",
+            "NM1*85*2******XX*1234567893",
+            "CLM*A1*10.00",
+            "SV1*HC:99211*10.00",
+            "SE*6*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    let provider = claims(&ic).claims[0].billing_provider.as_ref().unwrap();
+    assert_eq!(provider.last_name, None);
+    assert_eq!(provider.id, Some("1234567893"));
+    assert_eq!(
+        serde_json::to_value(provider).unwrap(),
+        json!({ "id": "1234567893" })
     );
 }
 
