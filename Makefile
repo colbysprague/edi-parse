@@ -7,8 +7,20 @@ N       ?= 1000
 T       ?=
 GEN_DIR := data/generated
 BIN     := ./target/release/edi-parse
+RUNS    ?= 10
+SCALE_NS  ?= 100 1000 10000
+SCALE_DIR := data/scale
+BUDGET  ?= 2
+MAX_N   ?= 256000
+LOAD_DIR  := data/load
 
-.PHONY: help build release run test test-one fmt lint gen-data bench baseline clean
+# $(call TIME_ALL,dir): time the three implementations on dir with warm-up runs.
+TIME_ALL = $(PYTHON) scripts/bench.py --runs $(RUNS) \
+	--cmd python "$(PYTHON) scripts/baseline.py $(1)" \
+	--cmd rust-seq "$(BIN) summary --sequential $(1)" \
+	--cmd rust-par "$(BIN) summary $(1)"
+
+.PHONY: help build release run test test-one fmt lint gen-data bench baseline scaling load clean
 
 help: ## List all targets
 	@echo "usage: make <target>"
@@ -47,16 +59,22 @@ gen-data: ## Generate N synthetic files into data/generated (make gen-data N=100
 bench: ## Criterion benchmarks (run make gen-data first for process_dir)
 	$(CARGO) bench
 
-baseline: release ## Time the Python baseline vs the Rust release build on data/generated
+baseline: release ## Time Python vs Rust seq/parallel on data/generated (RUNS=10)
 	@if [ ! -d $(GEN_DIR) ]; then echo "no $(GEN_DIR); run: make gen-data N=$(N)"; exit 1; fi
 	@echo "files: $$(ls $(GEN_DIR) | wc -l | tr -d ' ')"
-	@echo; echo "== Python baseline (sequential) =="
-	@time $(PYTHON) scripts/baseline.py $(GEN_DIR) > /dev/null
-	@echo; echo "== Rust release, sequential =="
-	@time $(BIN) summary --sequential $(GEN_DIR) > /dev/null 2>&1
-	@echo; echo "== Rust release, parallel =="
-	@time $(BIN) summary $(GEN_DIR) > /dev/null 2>&1
+	@$(call TIME_ALL,$(GEN_DIR))
+
+scaling: release ## Run baseline at N=100, 1000, 10000 (override with SCALE_NS="...")
+	@for n in $(SCALE_NS); do \
+		dir=$(SCALE_DIR)/$$n; \
+		if [ ! -d $$dir ]; then $(PYTHON) scripts/gen_data.py --count $$n --out $$dir/ > /dev/null; fi; \
+		echo; echo "== N=$$n =="; \
+		$(call TIME_ALL,$$dir); \
+	done
+
+load: release ## Double batch size until each impl exceeds BUDGET secs (BUDGET=2 MAX_N=256000)
+	@$(PYTHON) scripts/loadtest.py --bin $(BIN) --python $(PYTHON) --budget $(BUDGET) --max $(MAX_N)
 
 clean: ## Remove build output and generated data
 	$(CARGO) clean
-	rm -rf $(GEN_DIR)
+	rm -rf $(GEN_DIR) $(SCALE_DIR) $(LOAD_DIR)

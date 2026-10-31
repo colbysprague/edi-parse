@@ -1,3 +1,6 @@
 /target
 /data/generated
 __pycache__/
+/data/scale
+/data/load
+/examples/output
