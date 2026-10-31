@@ -49,6 +49,10 @@ pub enum EdiError {
         value: String,
     },
 
+    /// `NM102` isn't `1` (person) or `2` (organization).
+    #[error("NM102: expected 1 or 2, found {value:?}")]
+    InvalidEntityType { value: String },
+
     /// `SE01` disagrees with the real number of segments from `ST` to `SE`.
     #[error("transaction {control_number}: SE01 declares {declared} segments but found {actual}")]
     SegmentCountMismatch {
