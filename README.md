@@ -1,15 +1,11 @@
 # edi-parse
 
-Parse, validate, and summarize X12 835 and 837 EDI files.
-
-## Build
+## Usage
 
     cargo build --release
 
 The binary is `./target/release/edi-parse`. The examples below call it
 `edi-parse`.
-
-## Commands
 
     edi-parse parse <PATH> [--pretty] [-o, --out <DIR>]
     edi-parse validate <FILE>
