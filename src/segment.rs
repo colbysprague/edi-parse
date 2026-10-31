@@ -114,8 +114,9 @@ segment_def! {
         entity_id: &'a str = 1,
         /// NM102: `1` person, `2` organization.
         entity_type: &'a str = 2,
-        /// NM103: last name, or organization name.
-        last_name: &'a str = 3,
+        /// NM103: last name, or organization name. X12 allows it to be blank,
+        /// for example when `NM109` identifies the party on its own.
+        last_name: Option<&'a str> = 3,
         /// NM104: first name (absent for organizations).
         first_name: Option<&'a str> = 4,
         /// NM108: what kind of ID NM109 is (`XX` = NPI, `MI` = member ID).
