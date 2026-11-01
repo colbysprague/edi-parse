@@ -177,22 +177,19 @@ pub fn tokenize_with<'a>(
     input: &'a str,
     delims: &Delimiters,
 ) -> Result<Vec<RawSegment<'a>>, EdiError> {
-    let segments: Vec<&str> = input
+    let mut out = Vec::with_capacity(input.matches(delims.segment).count() + 1);
+
+    for segment in input
         .split(delims.segment)
         .map(|p| p.trim_matches(['\r', '\n']))
         .filter(|p| !p.is_empty())
-        .collect();
-
-    let mut out = Vec::new();
-
-    for (idx, segment) in segments.iter().enumerate() {
-        let elements: Vec<&str> = segment.split(delims.element).collect();
-        let segment_id = get_valid_segment_id(elements.first().unwrap(), idx)?;
-
+    {
+        let mut parts = segment.split(delims.element);
+        let id = get_valid_segment_id(parts.next().unwrap_or_default(), out.len())?;
         out.push(RawSegment {
-            id: segment_id,
-            elements: elements[1..].to_vec(),
-        })
+            id,
+            elements: parts.collect(),
+        });
     }
 
     Ok(out)
