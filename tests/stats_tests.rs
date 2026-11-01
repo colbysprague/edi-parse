@@ -326,3 +326,36 @@ fn summary_serializes_to_json() {
     assert_eq!(v["claims"], 2);
     assert_eq!(v["procedure_counts"]["36415"], 1);
 }
+
+#[test]
+fn totals_serialize_in_whole_cents() {
+    let summary = Summary {
+        total_billed: 239212541.76999974,
+        total_paid: 158766257.14999998,
+        ..Summary::default()
+    };
+    let json = serde_json::to_value(&summary).unwrap();
+    assert_eq!(json["total_billed"], 239212541.77);
+    assert_eq!(json["total_paid"], 158766257.15);
+}
+
+#[test]
+fn totals_serialize_the_same_in_any_merge_order() {
+    let amounts = [0.1, 0.2, 0.3, 1234567.89, 0.07];
+    let one = |total_billed| Summary {
+        total_billed,
+        ..Summary::default()
+    };
+    let forward = amounts
+        .iter()
+        .fold(Summary::default(), |t, &a| t.merge(one(a)));
+    let backward = amounts
+        .iter()
+        .rev()
+        .fold(Summary::default(), |t, &a| t.merge(one(a)));
+
+    assert_eq!(
+        serde_json::to_string(&forward).unwrap(),
+        serde_json::to_string(&backward).unwrap(),
+    );
+}

@@ -67,6 +67,9 @@ With no `--out`, the JSON goes to stdout. A readable report always goes to
 stderr. Files that fail are counted in the summary, and the command still exits
 with 0.
 
+`total_billed` and `total_paid` are written rounded to cents, so a parallel run
+gives the same output every time.
+
 With `--out`, it also writes `<out>/validation_errors.json`. With no `--out`,
 you get the validation error counts only.
 

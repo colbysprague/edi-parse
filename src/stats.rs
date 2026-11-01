@@ -3,7 +3,7 @@
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::error::{EdiError, ValidationError};
 use crate::transaction::Interchange;
@@ -27,9 +27,11 @@ pub struct Summary {
     pub remits: usize,
     /// Service lines of every kind (`SV1`, `SV2`, `SV3` and `SVC`).
     pub service_lines: usize,
-    /// Sum of 837 claim `total_charge` (CLM02).
+    /// Sum of 837 claim `total_charge` (CLM02). Serialized in whole cents.
+    #[serde(serialize_with = "cents")]
     pub total_billed: f64,
-    /// Sum of 835 remit `paid` (CLP04).
+    /// Sum of 835 remit `paid` (CLP04). Serialized in whole cents.
+    #[serde(serialize_with = "cents")]
     pub total_paid: f64,
     /// Number of `ValidationError`s found.
     pub validation_errors: usize,
@@ -158,6 +160,14 @@ impl Summary {
 
         counts
     }
+}
+
+/// Write an `f64` sum rounded to cents. Floating point addition isn't
+/// associative, so the last bits of a total depend on the order files were
+/// merged in, which changes between parallel runs. Rounding keeps that out of
+/// the output.
+fn cents<S: Serializer>(total: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_f64((total * 100.0).round() / 100.0)
 }
 
 fn add_counts(
