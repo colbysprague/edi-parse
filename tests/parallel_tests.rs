@@ -2,12 +2,13 @@
 
 mod common;
 
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use common::*;
 use edi_parse::{
     collect_files, parse_dir, process_dir, process_dir_with_log, process_file, write_summary,
-    EdiError, Summary, VALIDATION_LOG_FILE,
+    EdiError, Mode, Summary, VALIDATION_LOG_FILE,
 };
 use serde_json::{json, Value};
 
@@ -170,6 +171,42 @@ fn many_files_parallel_matches_sequential() {
     assert_eq!(seq.claims, 250);
     assert_eq!(seq.procedure_counts["99213"], 250);
     assert_approx(seq.total_paid, 405.0 * 50.0);
+    assert_same(&seq, &par);
+}
+
+#[test]
+fn any_reader_count_matches_sequential() {
+    let dir = temp_dir("readers");
+    for i in 0..10 {
+        for name in ALL_SAMPLES {
+            std::fs::copy(samples_dir().join(name), dir.join(format!("{i:02}_{name}"))).unwrap();
+        }
+    }
+
+    let seq = process_dir(&dir, false).unwrap();
+    // 64 is more readers than there are files.
+    for readers in [1, 2, 64] {
+        let readers = NonZeroUsize::new(readers).unwrap();
+        assert_same(
+            &seq,
+            &process_dir(&dir, Mode::Parallel { readers }).unwrap(),
+        );
+    }
+}
+
+#[test]
+fn read_failures_are_counted_not_fatal() {
+    let dir = temp_dir("read-failures");
+    std::fs::copy(samples_dir().join(S_837_MULTI), dir.join("good.edi")).unwrap();
+    std::fs::write(dir.join("not_utf8.edi"), [0xff, 0xfe]).unwrap();
+    std::fs::write(dir.join("also_not_utf8.edi"), [0xff, 0xfe]).unwrap();
+
+    let seq = process_dir(&dir, false).unwrap();
+    let par = process_dir(&dir, true).unwrap();
+    assert_eq!(par.files_processed, 1);
+    assert_eq!(par.files_failed, 2);
+    assert!(par.failed_files[0].contains("also_not_utf8.edi"));
+    assert!(par.failed_files[1].contains("not_utf8.edi"));
     assert_same(&seq, &par);
 }
 

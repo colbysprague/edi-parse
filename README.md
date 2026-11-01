@@ -9,7 +9,7 @@ The binary is `./target/release/edi-parse`. The examples below call it
 
     edi-parse parse <PATH> [--pretty] [-o, --out <DIR>]
     edi-parse validate <FILE>
-    edi-parse summary <DIR> [--sequential] [--top <N>] [-o, --out <DIR>]
+    edi-parse summary <DIR> [--sequential] [--readers <N>] [--top <N>] [-o, --out <DIR>]
 
 Run `edi-parse --help` or `edi-parse <command> --help` for details.
 
@@ -59,6 +59,7 @@ are not searched.
 | Option         | Description                                                 |
 | -------------- | ----------------------------------------------------------- |
 | `--sequential` | Process files one at a time instead of in parallel.         |
+| `--readers <N>` | Threads that read files in a parallel run. Defaults to 4.  |
 | `--top <N>`    | How many top procedure codes to report. Defaults to 5.      |
 | `-o`, `--out`  | Write output files to this directory instead of stdout.     |
 

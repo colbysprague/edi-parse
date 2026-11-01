@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -5,7 +6,7 @@ use std::time::Instant;
 use clap::{Parser, Subcommand};
 use edi_parse::{
     parse_dir, parse_str, parse_to_file, process_dir, process_dir_with_log, to_json, write_summary,
-    EdiError, Summary, Validate, VALIDATION_LOG_FILE,
+    EdiError, Mode, Summary, Validate, DEFAULT_READERS, VALIDATION_LOG_FILE,
 };
 
 /// Parse, validate, and summarize X12 835/837P EDI files.
@@ -37,6 +38,9 @@ enum Command {
         /// Process files one at a time instead of in parallel.
         #[arg(long)]
         sequential: bool,
+        /// How many threads read files in a parallel run.
+        #[arg(long, default_value_t = DEFAULT_READERS, conflicts_with = "sequential")]
+        readers: NonZeroUsize,
         /// How many top procedure codes to print to stderr.
         #[arg(long, default_value_t = 5)]
         top: usize,
@@ -55,9 +59,17 @@ fn main() -> ExitCode {
         Command::Summary {
             dir,
             sequential,
+            readers,
             top,
             out,
-        } => cmd_summary(&dir, !sequential, top, out.as_deref()),
+        } => {
+            let mode = if sequential {
+                Mode::Sequential
+            } else {
+                Mode::Parallel { readers }
+            };
+            cmd_summary(&dir, mode, top, out.as_deref())
+        }
     };
     match result {
         Ok(code) => code,
@@ -151,14 +163,14 @@ fn report_validation_log(summary: &Summary, out: &Path) {
 
 fn cmd_summary(
     dir: &Path,
-    parallel: bool,
+    mode: Mode,
     top: usize,
     out: Option<&Path>,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let start = Instant::now();
     let summary = match out {
-        Some(out) => process_dir_with_log(dir, parallel, out)?,
-        None => process_dir(dir, parallel)?,
+        Some(out) => process_dir_with_log(dir, mode, out)?,
+        None => process_dir(dir, mode)?,
     };
     let elapsed = start.elapsed();
 
@@ -181,7 +193,10 @@ fn cmd_summary(
         summary.files_processed,
         summary.files_failed,
         elapsed,
-        if parallel { "parallel" } else { "sequential" },
+        match mode {
+            Mode::Sequential => "sequential",
+            Mode::Parallel { .. } => "parallel",
+        },
     );
     eprintln!(
         "{} claims billed ${:.2}; {} remits paid ${:.2}; {} validation error(s)",
