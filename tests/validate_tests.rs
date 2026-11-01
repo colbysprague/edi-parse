@@ -18,6 +18,8 @@ fn line(charge: f64, paid: Option<f64>) -> ServiceLine<'static> {
         description: None,
         charge,
         paid,
+        adjustments: Vec::new(),
+        remarks: Vec::new(),
     }
 }
 
@@ -46,6 +48,8 @@ fn remit(
         paid,
         patient_responsibility: None,
         patient: None,
+        adjustments: Vec::new(),
+        remarks: Vec::new(),
         service_lines: lines.iter().map(|&(c, p)| line(c, Some(p))).collect(),
     }
 }

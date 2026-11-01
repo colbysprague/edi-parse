@@ -61,6 +61,10 @@ pub enum EdiError {
     #[error("NM102: expected 1 or 2, found {value:?}")]
     InvalidEntityType { value: String },
 
+    /// `CAS01` isn't `CO`, `PR`, `OA`, `PI` or `CR`.
+    #[error("CAS01: expected CO, PR, OA, PI or CR, found {value:?}")]
+    InvalidGroupCode { value: String },
+
     /// `SE01` disagrees with the real number of segments from `ST` to `SE`.
     #[error("transaction {control_number}: SE01 declares {declared} segments but found {actual}")]
     SegmentCountMismatch {

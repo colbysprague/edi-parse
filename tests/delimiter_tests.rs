@@ -181,7 +181,7 @@ fn tokenize_pipe_sample() {
 fn tokenize_multi_line_sample() {
     let input = sample(S_835_MULTI);
     let segs = tokenize(&input).unwrap();
-    assert_eq!(segs.len(), 27);
+    assert_eq!(segs.len(), 30);
     for seg in &segs {
         assert!(!seg.id.contains('\n'), "{:?}", seg.id);
         assert!(seg.elements.iter().all(|e| !e.contains('\n')), "{seg:?}");

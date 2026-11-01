@@ -116,6 +116,8 @@ fn summary_counts_validation_errors() {
             description: None,
             charge: 1.0,
             paid: None,
+            adjustments: Vec::new(),
+            remarks: Vec::new(),
         }],
     };
     let ic = Interchange {
