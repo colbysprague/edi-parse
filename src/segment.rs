@@ -6,13 +6,7 @@
 use crate::error::EdiError;
 use crate::segment_id;
 use crate::tokenizer::{tokenize_with, Delimiters, RawSegment};
-use regex::Regex;
 use std::str::FromStr;
-use std::sync::LazyLock;
-static EDI_MONEY_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^-?([0-9]+\.?[0-9]*|\.[0-9]+)$").unwrap());
-
-static EDI_COUNT_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+$").unwrap());
 
 macro_rules! segment_def {
     (
@@ -520,18 +514,32 @@ pub fn required<'a>(raw: &RawSegment<'a>, index: usize) -> Result<&'a str, EdiEr
 /// [`EdiError::InvalidNumber`] (note: `str::parse::<f64>` alone accepts some of
 /// these). `segment` and `index` are only used to build the error.
 pub fn parse_amount(segment: &str, index: usize, value: &str) -> Result<f64, EdiError> {
-    parse_to::<f64>(segment, index, value, &EDI_MONEY_PATTERN)
+    parse_to::<f64>(segment, index, value, is_amount)
 }
 
-/// Parse value from a given segment index to type T using the supplied Regex
+/// One or more ASCII digits.
+fn is_count(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// An optional `-`, then digits with at most one `.`, and at least one digit.
+fn is_amount(value: &str) -> bool {
+    let unsigned = value.strip_prefix('-').unwrap_or(value);
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    (!whole.is_empty() || !fraction.is_empty())
+        && whole.bytes().all(|b| b.is_ascii_digit())
+        && fraction.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Parse value from a given segment index to type T if `is_valid` accepts it.
 fn parse_to<T: FromStr>(
     segment: &str,
     index: usize,
     value: &str,
-    pattern: &Regex,
+    is_valid: fn(&str) -> bool,
 ) -> Result<T, EdiError> {
     Some(value)
-        .filter(|v| pattern.is_match(v))
+        .filter(|v| is_valid(v))
         .and_then(|v| v.parse::<T>().ok())
         .ok_or_else(|| EdiError::InvalidNumber {
             segment: segment.to_string(),
@@ -543,7 +551,7 @@ fn parse_to<T: FromStr>(
 /// Parse a non-negative integer count (SE01, GE01, IEA01).
 /// Errors with [`EdiError::InvalidNumber`] like [`parse_amount`].
 pub fn parse_count(segment: &str, index: usize, value: &str) -> Result<usize, EdiError> {
-    parse_to::<usize>(segment, index, value, &EDI_COUNT_PATTERN)
+    parse_to::<usize>(segment, index, value, is_count)
 }
 
 /// Tokenize `input` and convert every raw segment with [`Segment::from_raw`],
@@ -552,8 +560,10 @@ pub fn parse_count(segment: &str, index: usize, value: &str) -> Result<usize, Ed
 /// Needs the delimiters for `from_raw`, so detect them once up front.
 pub fn parse_segments<'a>(input: &'a str) -> Result<Vec<Segment<'a>>, EdiError> {
     let delims = Delimiters::detect(input)?;
-    tokenize_with(input, &delims)?
-        .into_iter()
-        .map(|segment| Segment::from_raw(segment, &delims))
-        .collect()
+    let raw = tokenize_with(input, &delims)?;
+    let mut out = Vec::with_capacity(raw.len());
+    for segment in raw {
+        out.push(Segment::from_raw(segment, &delims)?);
+    }
+    Ok(out)
 }
