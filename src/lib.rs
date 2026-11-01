@@ -25,7 +25,7 @@ pub mod validation_log;
 pub use error::{EdiError, ValidationError};
 pub use parallel::{
     collect_files, collect_files_recursive, parse_dir, parse_to_file, process_dir,
-    process_dir_with_log, process_file, write_summary, ParseDirReport,
+    process_dir_with_log, process_file, write_summary, Mode, ParseDirReport, DEFAULT_READERS,
 };
 pub use segment::{parse_segments, Segment};
 pub use stats::Summary;
