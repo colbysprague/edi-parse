@@ -31,8 +31,8 @@ pub use segment::{parse_segments, Segment};
 pub use stats::Summary;
 pub use tokenizer::{tokenize, tokenize_with, Delimiters, RawSegment};
 pub use transaction::{
-    build_interchange, check_envelope, parse_str, to_json, Claim, ClaimSet, Interchange, Party,
-    Remit, Remittance, ServiceLine, Transaction,
+    build_interchange, check_envelope, parse_str, to_json, Adjustment, Claim, ClaimSet,
+    Interchange, Party, Remark, Remit, Remittance, ServiceLine, Transaction,
 };
 pub use validate::{validate_all, Validate};
 pub use validation_log::{ValidationLog, VALIDATION_LOG_FILE};

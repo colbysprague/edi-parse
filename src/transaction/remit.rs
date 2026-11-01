@@ -1,6 +1,6 @@
 //! 835 types: [`Remit`] and the transaction set that holds them.
 
-use super::{Party, ServiceLine};
+use super::{Adjustment, Party, Remark, ServiceLine};
 use serde::Serialize;
 
 /// An 835 claim payment: a `CLP` plus its `SVC` lines.
@@ -20,6 +20,13 @@ pub struct Remit<'a> {
     /// The `NM1*QC` that follows this `CLP`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patient: Option<Party<'a>>,
+    /// Claim-level `CAS` segments: those after the `CLP`, before any `SVC`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adjustments: Vec<Adjustment<'a>>,
+    /// Claim-level `LQ` segments: those after the `CLP`, before any `SVC`.
+    /// Version 008060X322 of the 835 puts them here.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remarks: Vec<Remark<'a>>,
     pub service_lines: Vec<ServiceLine<'a>>,
 }
 

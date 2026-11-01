@@ -286,6 +286,68 @@ impl<'a> Svc<'a> {
     }
 }
 
+/// One reason code, amount and quantity from a `CAS` segment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CasTriplet<'a> {
+    /// CAS02, 05, 08, 11, 14 or 17.
+    pub reason_code: &'a str,
+    /// CAS03, 06, 09, 12, 15 or 18.
+    pub amount: f64,
+    /// CAS04, 07, 10, 13, 16 or 19. Optional, numeric if present.
+    pub quantity: Option<f64>,
+}
+
+/// `CAS`: claim or service line adjustment (835).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cas<'a> {
+    /// CAS01: `CO`, `PR`, `OA`, `PI` or `CR`.
+    pub group_code: &'a str,
+    /// CAS02 to CAS19: 1 to 6 triplets. Blank triplets are left out.
+    pub triplets: Vec<CasTriplet<'a>>,
+}
+
+impl<'a> Cas<'a> {
+    pub fn from_segment(raw: &RawSegment<'a>) -> Result<Self, EdiError> {
+        let group_code = element::<&'a str>(raw, 1)?;
+        if !matches!(group_code, "CO" | "PR" | "OA" | "PI" | "CR") {
+            return Err(EdiError::InvalidGroupCode {
+                value: group_code.to_string(),
+            });
+        }
+
+        let mut triplets = Vec::new();
+        for first in (2..=17).step_by(3) {
+            // The first triplet is required, so it always falls through to the
+            // checks below. A later one is either wholly blank or must be valid.
+            if first > 2 && (first..first + 3).all(|index| raw.element(index).is_none()) {
+                continue;
+            }
+
+            triplets.push(CasTriplet {
+                reason_code: element::<&'a str>(raw, first)?,
+                amount: element::<f64>(raw, first + 1)?,
+                quantity: element::<Option<f64>>(raw, first + 2)?,
+            });
+        }
+
+        Ok(Cas {
+            group_code,
+            triplets,
+        })
+    }
+}
+
+segment_def! {
+    /// `LQ`: health care remark code (835).
+    #[derive(Debug, Clone, PartialEq)]
+    struct Lq<'a> {
+        /// LQ01: `HE` (RARC) or `RX` (NCPDP reject code) in an 835.
+        qualifier: &'a str = 1,
+        /// LQ02.
+        code: &'a str = 2,
+    }
+}
+
 segment_def! {
     /// `SE`: transaction set trailer.
     #[derive(Debug, Clone, PartialEq)]
@@ -321,7 +383,7 @@ segment_def! {
 
 /// Every segment this crate understands, plus a catch-all.
 ///
-/// `Unknown` keeps the raw parts so nothing is lost (`HL`, `DTM`, `CAS`, ...).
+/// `Unknown` keeps the raw parts so nothing is lost (`HL`, `DTM`, `REF`, ...).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Segment<'a> {
     Isa(Isa<'a>),
@@ -335,6 +397,8 @@ pub enum Segment<'a> {
     Sv3(Sv3<'a>),
     Clp(Clp<'a>),
     Svc(Svc<'a>),
+    Cas(Cas<'a>),
+    Lq(Lq<'a>),
     Se(Se<'a>),
     Ge(Ge<'a>),
     Iea(Iea<'a>),
@@ -384,7 +448,8 @@ impl<'a> Segment<'a> {
     /// (SV101, SV202, SV301, SVC01) on `delims.component`.
     ///
     /// Errors: [`EdiError::MissingElement`] for an absent/empty required
-    /// element, [`EdiError::InvalidNumber`] for a non-numeric amount or count.
+    /// element, [`EdiError::InvalidNumber`] for a non-numeric amount or count,
+    /// [`EdiError::InvalidGroupCode`] for a `CAS01` outside the allowed codes.
     pub fn from_raw(raw: RawSegment<'a>, delims: &Delimiters) -> Result<Segment<'a>, EdiError> {
         // Arms must be paths (`segment_id::ISA`), not bare names: a bare `ISA`
         // that isn't a const in scope is a catch-all binding, not a comparison.
@@ -400,6 +465,8 @@ impl<'a> Segment<'a> {
             segment_id::SV3 => Ok(Segment::Sv3(Sv3::from_segment(&raw, delims)?)),
             segment_id::CLP => Ok(Segment::Clp(Clp::from_segment(&raw)?)),
             segment_id::SVC => Ok(Segment::Svc(Svc::from_segment(&raw, delims)?)),
+            segment_id::CAS => Ok(Segment::Cas(Cas::from_segment(&raw)?)),
+            segment_id::LQ => Ok(Segment::Lq(Lq::from_segment(&raw)?)),
             segment_id::SE => Ok(Segment::Se(Se::from_segment(&raw)?)),
             segment_id::GE => Ok(Segment::Ge(Ge::from_segment(&raw)?)),
             segment_id::IEA => Ok(Segment::Iea(Iea::from_segment(&raw)?)),
@@ -424,6 +491,8 @@ impl<'a> Segment<'a> {
             Segment::Sv3(_) => segment_id::SV3,
             Segment::Clp(_) => segment_id::CLP,
             Segment::Svc(_) => segment_id::SVC,
+            Segment::Cas(_) => segment_id::CAS,
+            Segment::Lq(_) => segment_id::LQ,
             Segment::Se(_) => segment_id::SE,
             Segment::Ge(_) => segment_id::GE,
             Segment::Iea(_) => segment_id::IEA,

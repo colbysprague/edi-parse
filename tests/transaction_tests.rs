@@ -5,7 +5,8 @@ mod common;
 
 use common::*;
 use edi_parse::{
-    parse_str, to_json, EdiError, Interchange, Party, ServiceLine, Transaction, Validate,
+    parse_str, to_json, Adjustment, EdiError, Interchange, Party, Remark, ServiceLine, Transaction,
+    Validate,
 };
 use serde_json::{json, Value};
 
@@ -33,6 +34,8 @@ fn line(procedure_code: &str, charge: f64, paid: Option<f64>) -> ServiceLine<'_>
         description: None,
         charge,
         paid,
+        adjustments: Vec::new(),
+        remarks: Vec::new(),
     }
 }
 
@@ -314,8 +317,18 @@ fn groups_835_into_remits() {
     assert_eq!(
         first.service_lines,
         vec![
-            line("99213", 100.0, Some(80.0)),
-            line("85025", 50.0, Some(40.0))
+            ServiceLine {
+                adjustments: vec![adjustment("PR", "1", 15.0), adjustment("PR", "2", 5.0)],
+                remarks: vec![Remark {
+                    qualifier: "HE",
+                    code: "M15",
+                }],
+                ..line("99213", 100.0, Some(80.0))
+            },
+            ServiceLine {
+                adjustments: vec![adjustment("PR", "2", 10.0)],
+                ..line("85025", 50.0, Some(40.0))
+            },
         ]
     );
 
@@ -332,7 +345,13 @@ fn crlf_835_with_denial() {
     let denied = &r.remits[0];
     assert_eq!((denied.claim_id, denied.status_code), ("CLAIM201", "4"));
     assert_eq!(denied.paid, 0.0);
-    assert_eq!(denied.service_lines, vec![line("97110", 95.0, Some(0.0))]);
+    assert_eq!(
+        denied.service_lines,
+        vec![ServiceLine {
+            adjustments: vec![adjustment("CO", "50", 95.0)],
+            ..line("97110", 95.0, Some(0.0))
+        }]
+    );
     assert_eq!(
         r.remits[1].patient.as_ref().unwrap().first_name,
         Some("JANE")
@@ -355,6 +374,277 @@ fn remit_without_patient_or_lines() {
     assert_eq!(r.remits.len(), 1);
     assert_eq!(r.remits[0].patient, None);
     assert!(r.remits[0].service_lines.is_empty());
+}
+
+// ---- 835 adjustments and remarks ---------------------------------------------
+
+/// Wrap `body` in a single 835 transaction with the right `SE01`.
+fn envelope_835(body: &[&str]) -> String {
+    let se = format!("SE*{}*0001", body.len() + 2);
+    let mut segments = vec!["ST*835*0001"];
+    segments.extend_from_slice(body);
+    segments.push(&se);
+    envelope("HP", &segments)
+}
+
+fn adjustment<'a>(group_code: &'a str, reason_code: &'a str, amount: f64) -> Adjustment<'a> {
+    Adjustment {
+        group_code,
+        reason_code,
+        amount,
+        quantity: None,
+    }
+}
+
+#[track_caller]
+fn assert_orphan(input: &str, expected_position: usize, expected: &str, expected_found: &str) {
+    match parse_str(input) {
+        Err(EdiError::UnexpectedSegment {
+            position,
+            expected: exp,
+            found,
+        }) => {
+            assert_eq!(position, expected_position);
+            assert_eq!(exp, expected);
+            assert_eq!(found, expected_found);
+        }
+        other => panic!("expected UnexpectedSegment, got {other:?}"),
+    }
+}
+
+#[test]
+fn cas_after_clp_is_a_claim_level_adjustment() {
+    let input = envelope_835(&[
+        "CLP*C1*1*100.00*70.00",
+        "CAS*CO*45*20.00",
+        "NM1*QC*1*DOE*JANE",
+        "CAS*PR*1*10.00",
+        "SVC*HC:99213*100.00*70.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let remit = &remittance(&ic).remits[0];
+    assert_eq!(
+        remit.adjustments,
+        [adjustment("CO", "45", 20.0), adjustment("PR", "1", 10.0)]
+    );
+    assert!(remit.service_lines[0].adjustments.is_empty());
+}
+
+#[test]
+fn cas_after_svc_attaches_to_that_line() {
+    let input = envelope_835(&[
+        "CLP*C1*1*150.00*120.00",
+        "SVC*HC:99213*100.00*80.00",
+        "CAS*PR*2*20.00",
+        "SVC*HC:85025*50.00*40.00",
+        "CAS*CO*45*10.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let remit = &remittance(&ic).remits[0];
+    assert!(remit.adjustments.is_empty());
+    assert_eq!(
+        remit.service_lines[0].adjustments,
+        [adjustment("PR", "2", 20.0)]
+    );
+    assert_eq!(
+        remit.service_lines[1].adjustments,
+        [adjustment("CO", "45", 10.0)]
+    );
+}
+
+#[test]
+fn multiple_cas_on_a_line_flatten_in_order() {
+    let input = envelope_835(&[
+        "CLP*C1*1*100.00*60.00",
+        "SVC*HC:99213*100.00*60.00",
+        "CAS*CO*45*10.00*2*94*5.00",
+        "CAS*PR*1*25.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        remittance(&ic).remits[0].service_lines[0].adjustments,
+        [
+            Adjustment {
+                quantity: Some(2.0),
+                ..adjustment("CO", "45", 10.0)
+            },
+            adjustment("CO", "94", 5.0),
+            adjustment("PR", "1", 25.0),
+        ]
+    );
+}
+
+#[test]
+fn cas_after_a_later_clp_is_on_the_new_remit() {
+    let input = envelope_835(&[
+        "CLP*C1*1*10.00*10.00",
+        "SVC*HC:99213*10.00*10.00",
+        "CLP*C2*1*20.00*15.00",
+        "CAS*CO*45*5.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let remits = &remittance(&ic).remits;
+    assert!(remits[0].service_lines[0].adjustments.is_empty());
+    assert_eq!(remits[1].adjustments, [adjustment("CO", "45", 5.0)]);
+}
+
+#[test]
+fn lq_after_svc_is_a_remark_on_that_line() {
+    let input = envelope_835(&[
+        "CLP*C1*1*150.00*120.00",
+        "SVC*HC:99213*100.00*80.00",
+        "CAS*PR*2*20.00",
+        "LQ*HE*N130",
+        "LQ*RX*70",
+        "SVC*HC:85025*50.00*40.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let lines = &remittance(&ic).remits[0].service_lines;
+    assert_eq!(
+        lines[0].remarks,
+        [
+            Remark {
+                qualifier: "HE",
+                code: "N130"
+            },
+            Remark {
+                qualifier: "RX",
+                code: "70"
+            },
+        ]
+    );
+    assert!(lines[1].remarks.is_empty());
+}
+
+#[test]
+fn cas_before_any_clp_is_an_error() {
+    // position: ISA, GS, ST, CAS
+    let input = envelope_835(&["BPR*I*0", "CAS*CO*45*5.00"]);
+    assert_orphan(&input, 4, "CLP", "CAS");
+}
+
+#[test]
+fn lq_before_any_clp_is_an_error() {
+    let input = envelope_835(&["LQ*HE*N130"]);
+    assert_orphan(&input, 3, "CLP", "LQ");
+}
+
+#[test]
+fn lq_after_clp_is_a_claim_level_remark() {
+    let input = envelope_835(&[
+        "CLP*C1*1*10.00*10.00",
+        "LQ*HE*N25",
+        "SVC*HC:99213*10.00*10.00",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let remit = &remittance(&ic).remits[0];
+    assert_eq!(
+        remit.remarks,
+        [Remark {
+            qualifier: "HE",
+            code: "N25"
+        }]
+    );
+    assert!(remit.service_lines[0].remarks.is_empty());
+}
+
+#[test]
+fn lq_after_a_later_clp_does_not_reach_the_previous_line() {
+    let input = envelope_835(&[
+        "CLP*C1*1*10.00*10.00",
+        "SVC*HC:99213*10.00*10.00",
+        "CLP*C2*1*20.00*20.00",
+        "LQ*HE*N130",
+    ]);
+    let ic = parse_str(&input).unwrap();
+    let remits = &remittance(&ic).remits;
+    assert!(remits[0].service_lines[0].remarks.is_empty());
+    assert_eq!(remits[1].remarks.len(), 1);
+}
+
+#[test]
+fn every_x12_example_parses() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/x12");
+    let files = edi_parse::collect_files_recursive(&root).unwrap();
+    assert!(!files.is_empty());
+    for file in files {
+        let input = std::fs::read_to_string(&file).unwrap();
+        parse_str(&input).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    }
+}
+
+#[test]
+fn cas_after_se_is_an_error() {
+    let input = envelope(
+        "HP",
+        &[
+            "ST*835*0001",
+            "CLP*C1*1*10.00*10.00",
+            "SVC*HC:99213*10.00*10.00",
+            "SE*4*0001",
+            "CAS*CO*45*5.00",
+        ],
+    );
+    assert_orphan(&input, 6, "CLP", "CAS");
+}
+
+#[test]
+fn cas_does_not_reach_the_previous_transaction() {
+    let input = envelope(
+        "HP",
+        &[
+            "ST*835*0001",
+            "CLP*C1*1*10.00*10.00",
+            "SE*3*0001",
+            "ST*835*0002",
+            "CAS*CO*45*5.00",
+            "SE*3*0002",
+        ],
+    );
+    assert_orphan(&input, 6, "CLP", "CAS");
+}
+
+#[test]
+fn cas_and_lq_in_an_837_are_ignored() {
+    let input = envelope(
+        "HC",
+        &[
+            "ST*837*0001",
+            "CAS*CO*45*5.00",
+            "CLM*C1*10.00",
+            "CAS*CO*45*5.00",
+            "LQ*UT*04.03",
+            "SV1*HC:99213*10.00",
+            "LQ*UT*04.03",
+            "CAS*PR*1*5.00",
+            "SE*9*0001",
+        ],
+    );
+    let ic = parse_str(&input).unwrap();
+    assert_eq!(
+        claims(&ic).claims[0].service_lines,
+        [line("99213", 10.0, None)]
+    );
+}
+
+#[test]
+fn sample_835_has_adjustments_at_both_levels() {
+    let input = sample(S_835_MULTI);
+    let ic = parse_str(&input).unwrap();
+    let remits = &remittance(&ic).remits;
+
+    assert_eq!(remits[0].adjustments, []);
+    assert_eq!(
+        remits[0].service_lines[0].adjustments,
+        [adjustment("PR", "1", 15.0), adjustment("PR", "2", 5.0)]
+    );
+    assert_eq!(remits[0].service_lines[0].remarks[0].code, "M15");
+    assert_eq!(remits[2].adjustments, [adjustment("PR", "1", 25.0)]);
+    assert_eq!(
+        remits[2].service_lines[0].adjustments,
+        [adjustment("PR", "2", 10.0)]
+    );
+    assert_eq!(remits[2].service_lines[0].remarks[0].code, "N130");
 }
 
 // ---- structure --------------------------------------------------------------
@@ -714,8 +1004,44 @@ fn json_835_shape() {
     assert_eq!(remit["patient"]["first_name"], "JANE");
     assert_eq!(
         remit["service_lines"][1],
-        json!({ "procedure_code": "85025", "charge": 50.0, "paid": 40.0 })
+        json!({
+            "procedure_code": "85025",
+            "charge": 50.0,
+            "paid": 40.0,
+            "adjustments": [{ "group_code": "PR", "reason_code": "2", "amount": 10.0 }],
+        })
     );
+}
+
+#[test]
+fn json_835_adjustments_and_remarks() {
+    let v = json_of(S_835_MULTI);
+    let remits = &v["transactions"][0]["remits"];
+
+    assert!(remits[0].get("adjustments").is_none());
+    assert_eq!(
+        remits[0]["service_lines"][0]["adjustments"],
+        json!([
+            { "group_code": "PR", "reason_code": "1", "amount": 15.0 },
+            { "group_code": "PR", "reason_code": "2", "amount": 5.0 },
+        ])
+    );
+    assert_eq!(
+        remits[0]["service_lines"][0]["remarks"],
+        json!([{ "qualifier": "HE", "code": "M15" }])
+    );
+    assert_eq!(
+        remits[2]["adjustments"],
+        json!([{ "group_code": "PR", "reason_code": "1", "amount": 25.0 }])
+    );
+}
+
+#[test]
+fn json_837_lines_have_no_adjustment_keys() {
+    let v = json_of(S_837_MULTI);
+    let line = &v["transactions"][0]["claims"][0]["service_lines"][0];
+    assert!(line.get("adjustments").is_none());
+    assert!(line.get("remarks").is_none());
 }
 
 #[test]

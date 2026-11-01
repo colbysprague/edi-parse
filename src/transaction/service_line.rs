@@ -1,5 +1,6 @@
 //! A single service line, shared by 837 claims and 835 remits.
 
+use super::{Adjustment, Remark};
 use crate::segment::Procedure;
 use serde::Serialize;
 
@@ -21,6 +22,12 @@ pub struct ServiceLine<'a> {
     /// `None` for 837 lines (nothing has been paid yet), `Some` for 835 lines.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paid: Option<f64>,
+    /// 835 only: the `CAS` segments after this `SVC`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adjustments: Vec<Adjustment<'a>>,
+    /// 835 only: the `LQ` segments after this `SVC`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remarks: Vec<Remark<'a>>,
 }
 
 impl<'a> ServiceLine<'a> {
@@ -41,6 +48,8 @@ impl<'a> ServiceLine<'a> {
             description,
             charge,
             paid,
+            adjustments: Vec::new(),
+            remarks: Vec::new(),
         }
     }
 }

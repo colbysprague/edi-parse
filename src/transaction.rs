@@ -16,12 +16,14 @@ use crate::parse_segments;
 use crate::segment::Segment;
 use crate::segment_id::{self};
 
+mod adjustment;
 mod claim;
 mod interchange;
 mod party;
 mod remit;
 mod service_line;
 
+pub use adjustment::{Adjustment, Remark};
 pub use claim::{Claim, ClaimSet};
 pub use interchange::{Interchange, Transaction};
 pub use party::Party;
@@ -95,6 +97,19 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
     Ok(())
 }
 
+/// What an 835 `CAS` or `LQ` would attach to at the current position.
+#[derive(Clone, Copy)]
+enum Open {
+    /// Outside any transaction, or in an 835 before its first `CLP`.
+    Nothing,
+    /// In an 837, where `CAS` and `LQ` are valid but not modeled.
+    ClaimSet,
+    /// The last `CLP` of the current 835.
+    Remit,
+    /// The last `SVC` of the current remit.
+    Line,
+}
+
 /// Group a checked segment list into an [`Interchange`].
 ///
 /// Takes the `Vec` by value, so each segment's data moves into the result.
@@ -111,15 +126,22 @@ pub fn check_envelope(segments: &[Segment<'_>]) -> Result<(), EdiError> {
 /// - 835: `BPR02` is the transaction's total payment (0.0 if there is no
 ///   `BPR`); each `CLP` starts a
 ///   remit; the `NM1*QC` after it is its patient; `SVC` adds a line.
-/// - An `SV1`/`SV2`/`SV3`/`SVC` with no open claim/remit, or an `NM1*QC` with
-///   no open transaction or remit → [`EdiError::UnexpectedSegment`].
-/// - All other segments (`HL`, `DTM`, `CAS`, other `NM1`s, ...) are ignored.
+///   `CAS` and `LQ` attach to whichever of the remit or a line was opened most
+///   recently: after a `CLP` they are claim-level adjustments and remarks on
+///   the remit, after an `SVC` they belong to that line.
+/// - An `SV1`/`SV2`/`SV3`/`SVC` with no open claim/remit, an `NM1*QC` with no
+///   open transaction or remit, or a `CAS`/`LQ` with no open remit or line →
+///   [`EdiError::UnexpectedSegment`]. `ST` and `SE` close any open remit and
+///   line.
+/// - All other segments (`HL`, `DTM`, other `NM1`s, ...) are ignored, including
+///   `CAS` and `LQ` in an 837, where they carry COB and form data.
 pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'a>, EdiError> {
     let mut header = None;
     let mut transactions = Vec::new();
     let mut billing_provider = None;
     let mut subscriber = None;
     let mut patient = None;
+    let mut open = Open::Nothing;
 
     for (i, seg) in segments.into_iter().enumerate() {
         match seg {
@@ -128,15 +150,21 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                 patient = None;
 
                 match st.transaction_set_id {
-                    "837" => transactions.push(Transaction::Claims(ClaimSet {
-                        control_number: (st.control_number),
-                        claims: (Vec::new()),
-                    })),
-                    "835" => transactions.push(Transaction::Remittance(Remittance {
-                        control_number: (st.control_number),
-                        total_payment: (0.0),
-                        remits: (Vec::new()),
-                    })),
+                    "837" => {
+                        open = Open::ClaimSet;
+                        transactions.push(Transaction::Claims(ClaimSet {
+                            control_number: (st.control_number),
+                            claims: (Vec::new()),
+                        }))
+                    }
+                    "835" => {
+                        open = Open::Nothing;
+                        transactions.push(Transaction::Remittance(Remittance {
+                            control_number: (st.control_number),
+                            total_payment: (0.0),
+                            remits: (Vec::new()),
+                        }))
+                    }
                     _ => {
                         return Err(EdiError::UnsupportedTransaction(
                             st.transaction_set_id.to_string(),
@@ -214,6 +242,7 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
             }
             Segment::Clp(clp) => {
                 if let Some(Transaction::Remittance(set)) = transactions.last_mut() {
+                    open = Open::Remit;
                     set.remits.push(Remit {
                         claim_id: (clp.claim_id),
                         status_code: (clp.status_code),
@@ -221,6 +250,8 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                         paid: (clp.paid),
                         patient_responsibility: (clp.patient_responsibility),
                         patient: (None),
+                        adjustments: (Vec::new()),
+                        remarks: (Vec::new()),
                         service_lines: (Vec::new()),
                     })
                 }
@@ -240,8 +271,36 @@ pub fn build_interchange<'a>(segments: Vec<Segment<'a>>) -> Result<Interchange<'
                     Some(svc.procedure),
                     svc.charge,
                     Some(svc.paid),
-                ))
+                ));
+                open = Open::Line;
             }
+            Segment::Cas(cas) => {
+                let adjustments = match open {
+                    Open::ClaimSet => continue,
+                    Open::Nothing => None,
+                    Open::Remit => open_remit(&mut transactions).map(|r| &mut r.adjustments),
+                    Open::Line => open_line(&mut transactions).map(|l| &mut l.adjustments),
+                };
+                let Some(adjustments) = adjustments else {
+                    return Err(unexpected()(i, segment_id::CLP, segment_id::CAS));
+                };
+
+                adjustments.extend(Adjustment::from_cas(cas));
+            }
+            Segment::Lq(lq) => {
+                let remarks = match open {
+                    Open::ClaimSet => continue,
+                    Open::Nothing => None,
+                    Open::Remit => open_remit(&mut transactions).map(|r| &mut r.remarks),
+                    Open::Line => open_line(&mut transactions).map(|l| &mut l.remarks),
+                };
+                let Some(remarks) = remarks else {
+                    return Err(unexpected()(i, segment_id::CLP, segment_id::LQ));
+                };
+
+                remarks.push(Remark::from(lq));
+            }
+            Segment::Se(_) => open = Open::Nothing,
             _ => {}
         }
     }
@@ -262,6 +321,19 @@ fn open_claim<'s, 'a>(transactions: &'s mut [Transaction<'a>]) -> Option<&'s mut
         Some(Transaction::Claims(set)) => set.claims.last_mut(),
         _ => None,
     }
+}
+
+/// The remit that a `CAS` or `LQ` belongs to, if there is one.
+fn open_remit<'s, 'a>(transactions: &'s mut [Transaction<'a>]) -> Option<&'s mut Remit<'a>> {
+    match transactions.last_mut() {
+        Some(Transaction::Remittance(set)) => set.remits.last_mut(),
+        _ => None,
+    }
+}
+
+/// The 835 service line that a `CAS` or `LQ` belongs to, if there is one.
+fn open_line<'s, 'a>(transactions: &'s mut [Transaction<'a>]) -> Option<&'s mut ServiceLine<'a>> {
+    open_remit(transactions).and_then(|remit| remit.service_lines.last_mut())
 }
 
 fn unexpected() -> impl Fn(usize, &str, &str) -> EdiError {
@@ -285,7 +357,8 @@ pub fn parse_str<'a>(input: &'a str) -> Result<Interchange<'a>, EdiError> {
 /// - field names exactly as the Rust fields (`claim_id`, `service_lines`, ...);
 /// - each transaction has `"type": "claims"` or `"type": "remittance"` next to
 ///   its own fields (an internally tagged enum);
-/// - `Option` fields that are `None` are omitted, not `null`.
+/// - `Option` fields that are `None` are omitted, not `null`;
+/// - empty `adjustments` and `remarks` are omitted, so 837 output never has them.
 pub fn to_json(interchange: &Interchange<'_>, pretty: bool) -> Result<String, serde_json::Error> {
     if pretty {
         serde_json::to_string_pretty(interchange)

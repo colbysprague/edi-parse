@@ -389,7 +389,7 @@ fn unknown_segments_keep_their_parts() {
 
 #[test]
 fn unknown_elements_are_moved_not_copied() {
-    let input = String::from("CAS*PR*2*20.00");
+    let input = String::from("DTM*405*20261017");
     let range = input.as_bytes().as_ptr_range();
     let Segment::Unknown { id, elements } = parse(&input) else {
         panic!("not Unknown")
@@ -411,12 +411,170 @@ fn id_matches_raw_id_for_every_variant() {
         "SV1*HC:1*1.00",
         "CLP*C1*1*1.00*1.00",
         "SVC*HC:1*1.00*1.00",
+        "CAS*CO*45*1.00",
+        "LQ*HE*N130",
         "SE*2*0001",
         "GE*1*1",
         "IEA*1*000000001",
         "REF*EA*X",
     ] {
         assert_eq!(parse(s).id(), raw(s).id, "{s:?}");
+    }
+}
+
+fn triplet(reason_code: &str, amount: f64, quantity: Option<f64>) -> CasTriplet<'_> {
+    CasTriplet {
+        reason_code,
+        amount,
+        quantity,
+    }
+}
+
+#[test]
+fn cas_single_triplet() {
+    assert_eq!(
+        parse("CAS*PR*2*20.00"),
+        Segment::Cas(Cas {
+            group_code: "PR",
+            triplets: vec![triplet("2", 20.0, None)],
+        })
+    );
+}
+
+#[test]
+fn cas_full_six_triplets() {
+    assert_eq!(
+        parse("CAS*CO*1*1.00*1*2*2.00*2*3*3.00*3*4*4.00*4*5*5.00*5*6*6.00*6"),
+        Segment::Cas(Cas {
+            group_code: "CO",
+            triplets: vec![
+                triplet("1", 1.0, Some(1.0)),
+                triplet("2", 2.0, Some(2.0)),
+                triplet("3", 3.0, Some(3.0)),
+                triplet("4", 4.0, Some(4.0)),
+                triplet("5", 5.0, Some(5.0)),
+                triplet("6", 6.0, Some(6.0)),
+            ],
+        })
+    );
+}
+
+#[test]
+fn cas_omitted_trailing_triplets() {
+    let Segment::Cas(cas) = parse("CAS*OA*23*5.00*1*45*2.50") else {
+        panic!("not Cas")
+    };
+    assert_eq!(
+        cas.triplets,
+        [triplet("23", 5.0, Some(1.0)), triplet("45", 2.5, None)]
+    );
+}
+
+#[test]
+fn cas_empty_quantity() {
+    let Segment::Cas(cas) = parse("CAS*PI*96*7.00**97*3.00") else {
+        panic!("not Cas")
+    };
+    assert_eq!(
+        cas.triplets,
+        [triplet("96", 7.0, None), triplet("97", 3.0, None)]
+    );
+}
+
+#[test]
+fn cas_blank_triplet_between_others_is_skipped() {
+    let Segment::Cas(cas) = parse("CAS*CR*1*1.00*****3*3.00") else {
+        panic!("not Cas")
+    };
+    assert_eq!(
+        cas.triplets,
+        [triplet("1", 1.0, None), triplet("3", 3.0, None)]
+    );
+}
+
+#[test]
+fn cas_accepts_every_group_code_and_negative_amounts() {
+    for code in ["CO", "PR", "OA", "PI", "CR"] {
+        let s = format!("CAS*{code}*45*-5.00");
+        let Segment::Cas(cas) = parse(&s) else {
+            panic!("not Cas")
+        };
+        assert_eq!(cas.group_code, code);
+        assert_eq!(cas.triplets, [triplet("45", -5.0, None)]);
+    }
+}
+
+#[test]
+fn cas_bad_group_code() {
+    match parse_err("CAS*XX*45*5.00") {
+        EdiError::InvalidGroupCode { value } => assert_eq!(value, "XX"),
+        other => panic!("got {other:?}"),
+    }
+}
+
+#[test]
+fn cas_missing_required_elements() {
+    for (s, expected) in [
+        ("CAS", 1),
+        ("CAS**45*5.00", 1),
+        ("CAS*CO", 2),
+        ("CAS*CO**5.00", 2),
+        ("CAS*CO*45", 3),
+        ("CAS*CO*45*", 3),
+        // A later triplet is optional, but can't be partly filled in.
+        ("CAS*CO*45*5.00**94", 6),
+        ("CAS*CO*45*5.00***5.00", 5),
+        ("CAS*CO*45*5.00****1", 5),
+    ] {
+        match parse_err(s) {
+            EdiError::MissingElement { segment, index } => {
+                assert_eq!((segment.as_str(), index), ("CAS", expected), "{s:?}");
+            }
+            other => panic!("{s:?}: got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn cas_non_numeric_amount_and_quantity() {
+    for (s, expected_index, expected_value) in [
+        ("CAS*CO*45*12A.00", 3, "12A.00"),
+        ("CAS*CO*45*5.00*x", 4, "x"),
+        ("CAS*CO*45*5.00**94*1e5", 6, "1e5"),
+    ] {
+        match parse_err(s) {
+            EdiError::InvalidNumber {
+                segment,
+                index,
+                value,
+            } => assert_eq!(
+                (segment.as_str(), index, value.as_str()),
+                ("CAS", expected_index, expected_value),
+                "{s:?}"
+            ),
+            other => panic!("{s:?}: got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn lq() {
+    assert_eq!(
+        parse("LQ*HE*N130"),
+        Segment::Lq(Lq {
+            qualifier: "HE",
+            code: "N130",
+        })
+    );
+}
+
+#[test]
+fn lq_missing_code() {
+    match parse_err("LQ*HE") {
+        EdiError::MissingElement { segment, index } => {
+            assert_eq!((segment.as_str(), index), ("LQ", 2));
+        }
+        other => panic!("got {other:?}"),
     }
 }
 
