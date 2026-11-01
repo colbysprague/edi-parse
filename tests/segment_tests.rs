@@ -654,7 +654,8 @@ fn parse_amount_accepts_x12_decimals() {
 #[test]
 fn parse_amount_rejects_everything_else() {
     for s in [
-        "", "-", ".", "12A.00", "1e5", "NaN", "inf", "-inf", "+5", "1.2.3", " 1", "1,000",
+        "", "-", ".", "-.", "--1", "12A.00", "1e5", "NaN", "inf", "-inf", "+5", "1.2.3", " 1",
+        "1 ", "1\n", "1,000", "٣",
     ] {
         match parse_amount("CLM", 2, s) {
             Err(EdiError::InvalidNumber {
@@ -673,7 +674,7 @@ fn parse_amount_rejects_everything_else() {
 fn parse_count_digits_only() {
     assert_eq!(parse_count("SE", 1, "29").unwrap(), 29);
     assert_eq!(parse_count("SE", 1, "0").unwrap(), 0);
-    for s in ["", "-1", "1.0", "x", "+3"] {
+    for s in ["", "-1", "1.0", "x", "+3", "1\n", "٣"] {
         assert!(
             matches!(parse_count("SE", 1, s), Err(EdiError::InvalidNumber { .. })),
             "{s:?}"
