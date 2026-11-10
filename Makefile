@@ -22,7 +22,7 @@ TIME_ALL = $(PYTHON) scripts/bench.py --runs $(RUNS) \
 	--cmd rust-seq "$(BIN) summary --sequential $(1)" \
 	--cmd rust-par "$(BIN) summary $(1)"
 
-.PHONY: help build release run examples test test-one fmt lint gen-data bench baseline scaling load clean
+.PHONY: help build release run examples test test-one fmt lint gen-data bench baseline scaling load demo clean
 
 help: ## List all targets
 	@echo "usage: make <target>"
@@ -81,6 +81,10 @@ scaling: release ## Run baseline at N=100, 1000, 10000 (override with SCALE_NS="
 
 load: release ## Double batch size until each impl exceeds BUDGET secs (BUDGET=2 MAX_N=256000)
 	@$(PYTHON) scripts/loadtest.py --bin $(BIN) --python $(PYTHON) --budget $(BUDGET) --max $(MAX_N)
+
+demo: ## Build the web demo (wasm + example files) and start its dev server
+	bash web/build.sh
+	cd web && npm run dev
 
 clean: ## Remove build output and generated data
 	$(CARGO) clean
