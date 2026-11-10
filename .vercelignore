@@ -1,0 +1,10 @@
+/target
+/data/generated
+/data/scale
+/data/load
+/examples/output
+/web/node_modules
+/web/dist
+/web/src/pkg
+/web/public/fs.json
+/web/wasm/target
