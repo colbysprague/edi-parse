@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
   WrapText,
+  X,
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
@@ -86,6 +87,8 @@ export default function App() {
   /** `summary.json` or `validation_errors.json` in the output pane; null shows the active input's output. */
   const [outputOverride, setOutputOverride] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  // Shown again on every page load.
+  const [showNotice, setShowNotice] = useState(true)
   const fileInput = useRef<HTMLInputElement>(null)
   const mobile = useIsMobile()
 
@@ -358,6 +361,25 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col">
+      {showNotice && (
+        <div
+          role="note"
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 py-1 pr-1 pl-4 text-xs text-amber-900 dark:text-amber-200"
+        >
+          <span className="flex-1 text-center">
+            For demonstration purposes only. Please do not enter protected health information (PHI).
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Dismiss"
+            onClick={() => setShowNotice(false)}
+            className="text-amber-900 hover:bg-amber-500/15 hover:text-amber-950 dark:text-amber-200 dark:hover:text-amber-100"
+          >
+            <X />
+          </Button>
+        </div>
+      )}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <span className="font-mono text-sm font-semibold tracking-tight">edi-parse</span>
         <Separator orientation="vertical" className="my-auto h-4" />
