@@ -2,6 +2,9 @@
 
 Demo: https://edi-parse.vercel.app
 
+<img width="1512" height="825" alt="image" src="https://github.com/user-attachments/assets/8aeee2bf-c69b-4050-971a-6d5be7a25693" />
+
+
 ## Usage
 
     cargo build --release
